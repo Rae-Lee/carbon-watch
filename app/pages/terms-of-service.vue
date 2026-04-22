@@ -9,7 +9,7 @@ if (!page.value) {
 
 // SEO metadata
 useSeoMeta({
-  title: '免責聲明與資料來源 | 碳排大戶觀測站',
+  title: '免責聲明與資料來源 | 排碳大戶觀測站',
   description: '了解排碳大戶觀測站的使用條款、免責聲明與資料來源說明。',
 })
 
@@ -73,7 +73,14 @@ useHead({
   margin-bottom: 0.75rem;
   line-height: 1.4;
 }
-
+  
+.terms-content :deep(h2 a),
+.terms-content :deep(h3 a) {
+  color: inherit;
+  text-decoration: none;
+  pointer-events: none;
+}
+  
 .terms-content :deep(p) {
   font-size: 1rem;
   line-height: 1.75;
