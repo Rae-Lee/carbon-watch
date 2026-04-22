@@ -200,8 +200,8 @@ const filteredFunds = computed(() => {
 <template>
   <div class="space-y-6">
     <div>
-      <h1 class="text-4xl font-bold mb-2">投資基金觀測表</h1>
-      <p class="text-earth-brown">
+      <h1 class="text-3xl sm:text-[2.5rem] font-bold text-green-deep mt-0 sm:mt-8 leading-[1.2] pb-2">投資基金觀測表</h1>
+      <p class="text-earth-brown mb-8">
         追蹤台灣投資基金的排碳大戶投資狀況
       </p>
     </div>
