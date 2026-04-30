@@ -562,6 +562,11 @@ const sorting = ref([
         </div>
       </div>
     </div>
+    <div v-if="showLegend">
+      <NuxtLink to="/methodology" class="text-sm text-green-pure hover:underline">
+        了解分級標準 →
+      </NuxtLink>
+    </div>
 
     <!-- Table -->
     <UTable
