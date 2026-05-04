@@ -282,7 +282,7 @@ function addRepresentativeCity(
     
     if (!companyInfo) {
       failedCompanies.push(companyName);
-      logger.info(`⚠️  Cannot find tax_code for company: ${companyName}`);
+      logger.info(`Cannot find tax_code for company: ${companyName}`);
       continue;
     }
     
@@ -293,7 +293,7 @@ function addRepresentativeCity(
     
     if (!city) {
       failedCompanies.push(companyName);
-      logger.info(`⚠️  Cannot find 代表縣市 for company: ${companyName} (tax_code: ${taxCode})`);
+      logger.info(`Cannot find 代表縣市 for company: ${companyName} (tax_code: ${taxCode})`);
       // Still add tax_code and full name even if city is not found
       company['事業統編'] = taxCode;
       company['公司全名'] = fullName;
@@ -310,10 +310,72 @@ function addRepresentativeCity(
   logger.success(`Successfully added 代表縣市 for ${successCount}/${companyList.length} companies`);
   
   if (failedCompanies.length > 0) {
-    logger.info(`⚠️  Failed to map ${failedCompanies.length} companies:`);
+    logger.info(`Failed to map ${failedCompanies.length} companies:`);
     failedCompanies.forEach(name => logger.info(`  - ${name}`));
   }
-  
+
+  return companyList;
+}
+
+const RADAR_SCORE_FIELDS = [
+  '2030年溫室氣體絕對減量目標',
+  '2030年再生能源使用率目標',
+  '2030年能源效率進步目標',
+  '2024年再生能源使用率',
+  '2022-2024年能源效率進步率',
+  '範疇三及減量策略',
+];
+
+/**
+ * Override the 6 radar score columns on each company with values from
+ * 雷達圖_Data.csv (the canonical source). The hub CSV (排碳大戶表_Data.csv)
+ * provides the 公司簡稱 → 統一編號 mapping for all 287 companies, which is
+ * more complete than all-company.csv (some companies lack name_abbr there).
+ */
+function applyRadarScoresFromSource(
+  companyList: Record<string, string>[],
+  hubData: Record<string, string>[],
+  radarData: Record<string, string>[],
+  logger: Logger
+): Record<string, string>[] {
+  const nameToUbn = new Map<string, string>();
+  for (const row of hubData) {
+    const abbr = row['公司簡稱']?.trim();
+    const ubn = row['統一編號']?.trim();
+    if (abbr && ubn) nameToUbn.set(abbr, ubn);
+  }
+
+  const ubnToScores = new Map<string, Record<string, string>>();
+  for (const row of radarData) {
+    const ubn = row['統一編號']?.trim();
+    if (!ubn) continue;
+    const scores: Record<string, string> = {};
+    for (const field of RADAR_SCORE_FIELDS) scores[field] = row[field] ?? '';
+    ubnToScores.set(ubn, scores);
+  }
+
+  let matched = 0;
+  const unmatched: string[] = [];
+  for (const company of companyList) {
+    const name = company['公司']?.trim();
+    const ubn = name ? nameToUbn.get(name) : undefined;
+    const scores = ubn ? ubnToScores.get(ubn) : undefined;
+    if (!scores) {
+      unmatched.push(`${name ?? '<no name>'} (ubn=${ubn ?? 'unknown'})`);
+      continue;
+    }
+    for (const field of RADAR_SCORE_FIELDS) company[field] = scores[field];
+    matched++;
+  }
+
+  logger.success(
+    `Radar scores joined from 雷達圖_Data: ${matched}/${companyList.length} companies`
+  );
+  if (unmatched.length > 0) {
+    logger.info(`Unmatched (${unmatched.length}):`);
+    unmatched.slice(0, 10).forEach(name => logger.info(`  - ${name}`));
+  }
+
   return companyList;
 }
 
@@ -374,6 +436,25 @@ async function transformCompanyData() {
 
     // Add 代表縣市 to company list
     companyList = addRepresentativeCity(companyList, allCompanyData, companyDetailData, logger);
+
+    // 4. Override radar score columns from 雷達圖_Data (single source of truth).
+    // 易讀版 carries duplicate score columns that go stale if its snapshot is not
+    // refreshed in lockstep with 雷達圖_Data. Joining via the hub (排碳大戶表_Data)
+    // covers companies whose 事業統編 lookup via all-company.csv fails.
+    const hubCsvPath = join(RAW_DATA_DIR, '排碳大戶表_Data.csv');
+    logger.info(`Reading hub data from: ${hubCsvPath}`);
+    const hubData = parseCSV(readFileSync(hubCsvPath, 'utf-8'));
+    logger.info(`Parsed ${hubData.length} records from 排碳大戶表_Data.csv`);
+
+    const radarCsvPath = join(RAW_DATA_DIR, '雷達圖_Data.csv');
+    logger.info(`Reading radar source from: ${radarCsvPath}`);
+    const radarRaw = readFileSync(radarCsvPath, 'utf-8');
+    // First row is a section-label band ("Demo,,,目標設定,..."); real header is row 2.
+    const radarTrimmed = radarRaw.slice(radarRaw.indexOf('\n') + 1);
+    const radarData = parseCSV(radarTrimmed);
+    logger.info(`Parsed ${radarData.length} records from 雷達圖_Data.csv`);
+
+    companyList = applyRadarScoresFromSource(companyList, hubData, radarData, logger);
 
     // Create output directory if it doesn't exist
     mkdirSync(OUTPUT_DIR, { recursive: true });
