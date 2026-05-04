@@ -13,6 +13,7 @@ export interface CompanyData {
   '2022-2024年能源效率進步率': string
   '範疇三及減量策略': string
   '有具體減量策略': string
+  '關鍵減量策略': string
   '範疇三揭露': string
   '範疇三減量規劃': string
   '近三年能效進步率': string

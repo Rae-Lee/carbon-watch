@@ -391,14 +391,7 @@ const proColumns: TableColumn<CompanyData>[] = [
     accessorKey: '有具體減量策略',
     header: ({ column }) => createSortableHeader(column, '有具體減量策略'),
     enableSorting: true,
-    cell: ({ row }) => {
-      const hasStrategy = row.original['有具體減量策略']
-      const has = hasStrategy && hasStrategy.trim() !== ''
-      return h('div', {
-        class: 'text-center cursor-help',
-        title: hasStrategy || '無資料'
-      }, h('span', { class: has ? 'text-green-deep font-bold' : 'text-accent-red font-bold' }, has ? '\u2713' : '\u2717'))
-    },
+    cell: ({ row }) => h('div', { class: 'text-center' }, renderStatus(row.original['有具體減量策略'])),
     meta: {
       class: {
         th: 'text-center',

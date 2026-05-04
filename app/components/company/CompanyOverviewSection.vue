@@ -61,7 +61,7 @@ const parseParagraph = (value?: string): string => {
 }
 
 const companyReductionStrategy = computed(() =>
-  parseParagraph(props.company['有具體減量策略'])
+  parseParagraph(props.company['關鍵減量策略'])
 )
 
 // Net Zero Path Simulator data (mock baseline + real targets)
