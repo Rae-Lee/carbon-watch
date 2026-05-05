@@ -37,16 +37,9 @@ const expectedCarbonFee = computed(() => {
   return companyEmission.value * CARBON_FEE_RATE
 })
 
-// Region data (placeholder until real data is available)
-const regionEmissions = computed(() => {
-  if (!props.company.代表縣市) return []
-  // Mock data matching design: 3 regions with same values
-  return [
-    { 縣市: '新竹市', 縣市佔比: 24, 排放量: 548990 },
-    { 縣市: '台南市', 縣市佔比: 24, 排放量: 548990 },
-    { 縣市: '台中市', 縣市佔比: 24, 排放量: 548990 }
-  ]
-})
+// Top 3 縣市 emission distribution (real data from IV. 企業縣市排放絕對值（公式）.csv)
+// 縣市佔比 = company emission in this county / sum of all 排碳大戶 in this county × 100
+const regionEmissions = computed(() => props.company.regionEmissions ?? [])
 
 // Coal usage historical data from coal-usage-map.json (keyed by 公司全名)
 const coalUsageData = computed(() => {
@@ -114,7 +107,7 @@ const 淨零年預估排放量 = computed(() => {
       :淨零目標年="company.淨零目標年"
       :年排放量="companyEmission"
       :全台佔比="taiwanPercentage"
-      :年度變化="-5"
+      :年度變化="company.年度變化 ?? undefined"
       :預期碳費="expectedCarbonFee"
     />
 

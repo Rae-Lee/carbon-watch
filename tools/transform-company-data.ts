@@ -351,6 +351,141 @@ function addRepresentativeCity(
   return companyList;
 }
 
+/**
+ * Compute YoY 排放量 delta from hub 總碳排放量_2023 vs _2024.
+ * Adds company['年度變化'] = number (percentage, 1 decimal) or null when either
+ * year is missing. CompanyHeader.vue hides the YoY badge when null.
+ */
+function addEmissionYoYDelta(
+  companyList: Record<string, string>[],
+  hubData: Record<string, string>[],
+  logger: Logger
+): Record<string, string>[] {
+  const parseEmission = (raw: string | undefined): number | null => {
+    if (!raw) return null;
+    const n = parseFloat(raw.replace(/,/g, ''));
+    return isNaN(n) || n <= 0 ? null : n;
+  };
+
+  const hub2023 = new Map<string, number>();
+  const hub2024 = new Map<string, number>();
+  for (const row of hubData) {
+    const abbr = row['公司簡稱']?.trim();
+    if (!abbr) continue;
+    const e2023 = parseEmission(row['總碳排放量_2023']);
+    const e2024 = parseEmission(row['總碳排放量_2024']);
+    if (e2023 !== null) hub2023.set(abbr, e2023);
+    if (e2024 !== null) hub2024.set(abbr, e2024);
+  }
+
+  let computed = 0;
+  let missing = 0;
+  for (const company of companyList) {
+    const abbr = company['公司'];
+    const e2023 = hub2023.get(abbr);
+    const e2024 = hub2024.get(abbr);
+    if (e2023 === undefined || e2024 === undefined) {
+      (company as Record<string, unknown>)['年度變化'] = null;
+      missing++;
+      continue;
+    }
+    const delta = ((e2024 - e2023) / e2023) * 100;
+    (company as Record<string, unknown>)['年度變化'] = Math.round(delta * 10) / 10;
+    computed++;
+  }
+
+  logger.success(`Computed 年度變化 (YoY emission delta) for ${computed}/${companyList.length} companies`);
+  if (missing > 0) logger.info(`  ${missing} skipped (missing 2023 or 2024 emission data)`);
+
+  return companyList;
+}
+
+/**
+ * Add per-company top-3 縣市 emission distribution.
+ * Source: IV. 企業縣市排放絕對值（公式）.csv (公司全名 × 縣市 absolute matrix).
+ * 縣市佔比 = company emission in this county / sum of all 排碳大戶 in this county × 100
+ *   (advocacy framing: 該公司在縣市的污染主導地位)
+ */
+function addRegionEmissionDistribution(
+  companyList: Record<string, string>[],
+  regionAbsoluteData: Record<string, string>[],
+  logger: Logger
+): Record<string, string>[] {
+  if (regionAbsoluteData.length === 0) {
+    logger.info('No region absolute data; skipping');
+    return companyList;
+  }
+
+  const KEY_COLUMN = '於該縣市合計排放量(公噸CO2e)';
+  const TOTAL_COLUMN = '全台';
+  const allFields = Object.keys(regionAbsoluteData[0]!);
+  const countyColumns = allFields.filter(f => f !== KEY_COLUMN && f !== TOTAL_COLUMN);
+
+  const parseAmount = (raw: string | undefined): number => {
+    if (!raw) return 0;
+    const n = parseFloat(raw.replace(/,/g, ''));
+    return isNaN(n) ? 0 : n;
+  };
+
+  // County totals: sum each county column across all companies
+  const countyTotals: Record<string, number> = {};
+  for (const county of countyColumns) {
+    countyTotals[county] = regionAbsoluteData.reduce(
+      (sum, row) => sum + parseAmount(row[county]),
+      0
+    );
+  }
+
+  // Lookup company row by normalized 公司全名 (handle 臺/台 异体字)
+  const normalizeName = (name: string) => name.replace(/臺/g, '台');
+  const rowByFullName = new Map<string, Record<string, string>>();
+  for (const row of regionAbsoluteData) {
+    const fullName = row[KEY_COLUMN]?.trim();
+    if (fullName) rowByFullName.set(normalizeName(fullName), row);
+  }
+
+  let attached = 0;
+  let missingFullName = 0;
+  let notInRegionCsv = 0;
+
+  for (const company of companyList) {
+    const fullName = company['公司全名'];
+    if (!fullName) {
+      missingFullName++;
+      continue;
+    }
+    const row = rowByFullName.get(normalizeName(fullName));
+    if (!row) {
+      notInRegionCsv++;
+      continue;
+    }
+
+    const items: Array<{ 縣市: string; 排放量: number; 縣市佔比: number }> = [];
+    for (const county of countyColumns) {
+      const val = parseAmount(row[county]);
+      if (val > 0) {
+        const total = countyTotals[county] || 0;
+        const share = total > 0 ? Math.round((val / total) * 1000) / 10 : 0;
+        items.push({ 縣市: county, 排放量: val, 縣市佔比: share });
+      }
+    }
+
+    items.sort((a, b) => b.排放量 - a.排放量);
+    const top3 = items.slice(0, 3);
+
+    if (top3.length > 0) {
+      (company as Record<string, unknown>)['regionEmissions'] = top3;
+      attached++;
+    }
+  }
+
+  logger.success(`Attached regionEmissions to ${attached}/${companyList.length} companies`);
+  if (missingFullName > 0) logger.info(`  ${missingFullName} skipped (no 公司全名)`);
+  if (notInRegionCsv > 0) logger.info(`  ${notInRegionCsv} not in IV. 企業縣市排放絕對值（公式）.csv`);
+
+  return companyList;
+}
+
 const RADAR_SCORE_FIELDS = [
   '2030年溫室氣體絕對減量目標',
   '2030年再生能源使用率目標',
@@ -477,6 +612,16 @@ async function transformCompanyData() {
 
     // Add 代表縣市 to company list (with hub fallback)
     companyList = addRepresentativeCity(companyList, allCompanyData, companyDetailData, hubData, logger);
+
+    // Compute YoY emission delta from hub 總碳排放量_2023 vs _2024
+    companyList = addEmissionYoYDelta(companyList, hubData, logger);
+
+    // Add per-company top-3 縣市 emission distribution
+    const regionAbsCsvPath = join(RAW_DATA_DIR, 'IV. 企業縣市排放絕對值（公式）.csv');
+    logger.info(`Reading region emission absolute data from: ${regionAbsCsvPath}`);
+    const regionAbsoluteData = parseCSV(readFileSync(regionAbsCsvPath, 'utf-8'));
+    logger.info(`Parsed ${regionAbsoluteData.length} records from IV. 企業縣市排放絕對值（公式）.csv`);
+    companyList = addRegionEmissionDistribution(companyList, regionAbsoluteData, logger);
 
     // 4. Override radar score columns from 雷達圖_Data (single source of truth).
     // 易讀版 carries duplicate score columns that go stale if its snapshot is not
