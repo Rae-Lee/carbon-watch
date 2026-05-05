@@ -236,18 +236,21 @@ function mergeCompanyData(
 }
 
 /**
- * Add 代表縣市 data to company list
+ * Add 代表縣市 data to company list.
+ * Primary source: all-company.csv (公開資訊觀測站 listed-company registry).
+ * Hub fallback: 排碳大戶表_Data.csv when all-company.csv name_abbr is empty
+ *   (subsidiaries / 非上市櫃 entries lack name_abbr there).
  */
 function addRepresentativeCity(
   companyList: Record<string, string>[],
   allCompanyData: Record<string, string>[],
   companyDetailData: Record<string, string>[],
+  hubData: Record<string, string>[],
   logger: Logger
 ): Record<string, string>[] {
   logger.info('Step 3: Adding 代表縣市, 事業統編, and 公司全名 data');
-  
-  // Create lookup maps
-  // Map 1: name_abbr -> { tax_code, name }
+
+  // Map 1: all-company name_abbr -> { tax_code, name }
   const nameAbbrToCompany = new Map<string, { taxCode: string; fullName: string }>();
   for (const company of allCompanyData) {
     const nameAbbr = company['name_abbr']?.trim();
@@ -258,7 +261,20 @@ function addRepresentativeCity(
     }
   }
   logger.info(`Loaded ${nameAbbrToCompany.size} company mappings from all-company.csv`);
-  
+
+  // Map 1b (hub fallback): 公司簡稱 -> { 統一編號, 公司全稱, 最大廠所處縣市 }
+  const hubByAbbr = new Map<string, { taxCode: string; fullName: string; city: string }>();
+  for (const row of hubData) {
+    const abbr = row['公司簡稱']?.trim();
+    const taxCode = row['統一編號']?.trim();
+    const fullName = row['公司全稱']?.trim() ?? '';
+    const city = row['最大廠所處縣市']?.trim() ?? '';
+    if (abbr && taxCode) {
+      hubByAbbr.set(abbr, { taxCode, fullName, city });
+    }
+  }
+  logger.info(`Loaded ${hubByAbbr.size} hub mappings from 排碳大戶表_Data.csv (fallback)`);
+
   // Map 2: tax_code -> 代表縣市
   const taxCodeToCity = new Map<string, string>();
   for (const detail of companyDetailData) {
@@ -269,46 +285,64 @@ function addRepresentativeCity(
     }
   }
   logger.info(`Loaded ${taxCodeToCity.size} city mappings from II. 公司總表（原始值）.csv`);
-  
-  // Add 代表縣市, 事業統編, and 公司全名 to each company
+
   let successCount = 0;
+  let hubFallbackCount = 0;
   const failedCompanies: string[] = [];
-  
+
   for (const company of companyList) {
     const companyName = company['公司'];
-    
-    // Step 1: Get tax_code and full name from all-company using name_abbr
-    const companyInfo = nameAbbrToCompany.get(companyName);
-    
+
+    // Step 1: Try all-company.csv (primary source)
+    let companyInfo: { taxCode: string; fullName: string } | undefined =
+      nameAbbrToCompany.get(companyName);
+    let cityFromHub = '';
+
+    // Step 1b: Hub fallback when all-company miss (154/287 lack name_abbr there)
+    if (!companyInfo) {
+      const hubMatch = hubByAbbr.get(companyName);
+      if (hubMatch) {
+        companyInfo = { taxCode: hubMatch.taxCode, fullName: hubMatch.fullName };
+        cityFromHub = hubMatch.city;
+        hubFallbackCount++;
+      }
+    }
+
     if (!companyInfo) {
       failedCompanies.push(companyName);
       logger.info(`Cannot find tax_code for company: ${companyName}`);
       continue;
     }
-    
+
     const { taxCode, fullName } = companyInfo;
-    
-    // Step 2: Get 代表縣市 using tax_code
-    const city = taxCodeToCity.get(taxCode);
-    
+
+    // Step 2: Get 代表縣市 — prefer II. 公司總表 lookup, else hub's 最大廠所處縣市
+    let city = taxCodeToCity.get(taxCode) ?? '';
+    if (!city && cityFromHub) {
+      city = cityFromHub;
+    }
+
     if (!city) {
       failedCompanies.push(companyName);
       logger.info(`Cannot find 代表縣市 for company: ${companyName} (tax_code: ${taxCode})`);
       // Still add tax_code and full name even if city is not found
       company['事業統編'] = taxCode;
-      company['公司全名'] = fullName;
+      if (fullName) company['公司全名'] = fullName;
       continue;
     }
-    
+
     // Add all fields to company record
     company['代表縣市'] = city;
     company['事業統編'] = taxCode;
-    company['公司全名'] = fullName;
+    if (fullName) company['公司全名'] = fullName;
     successCount++;
   }
-  
+
   logger.success(`Successfully added 代表縣市 for ${successCount}/${companyList.length} companies`);
-  
+  if (hubFallbackCount > 0) {
+    logger.info(`Hub fallback used for ${hubFallbackCount} companies (all-company.csv name_abbr empty)`);
+  }
+
   if (failedCompanies.length > 0) {
     logger.info(`Failed to map ${failedCompanies.length} companies:`);
     failedCompanies.forEach(name => logger.info(`  - ${name}`));
@@ -434,17 +468,20 @@ async function transformCompanyData() {
     const companyDetailData = parseCSV(companyDetailCsvContent);
     logger.info(`Parsed ${companyDetailData.length} records from II. 公司總表（原始值）.csv`);
 
-    // Add 代表縣市 to company list
-    companyList = addRepresentativeCity(companyList, allCompanyData, companyDetailData, logger);
+    // Hub provides 公司簡稱 → (統一編號, 公司全稱, 最大廠所處縣市) for all 287 companies,
+    // used as fallback for the 154/287 entries that lack name_abbr in all-company.csv.
+    const hubCsvPath = join(RAW_DATA_DIR, '排碳大戶表_Data.csv');
+    logger.info(`Reading hub data from: ${hubCsvPath}`);
+    const hubData = parseCSV(readFileSync(hubCsvPath, 'utf-8'));
+    logger.info(`Parsed ${hubData.length} records from 排碳大戶表_Data.csv`);
+
+    // Add 代表縣市 to company list (with hub fallback)
+    companyList = addRepresentativeCity(companyList, allCompanyData, companyDetailData, hubData, logger);
 
     // 4. Override radar score columns from 雷達圖_Data (single source of truth).
     // 易讀版 carries duplicate score columns that go stale if its snapshot is not
     // refreshed in lockstep with 雷達圖_Data. Joining via the hub (排碳大戶表_Data)
     // covers companies whose 事業統編 lookup via all-company.csv fails.
-    const hubCsvPath = join(RAW_DATA_DIR, '排碳大戶表_Data.csv');
-    logger.info(`Reading hub data from: ${hubCsvPath}`);
-    const hubData = parseCSV(readFileSync(hubCsvPath, 'utf-8'));
-    logger.info(`Parsed ${hubData.length} records from 排碳大戶表_Data.csv`);
 
     const radarCsvPath = join(RAW_DATA_DIR, '雷達圖_Data.csv');
     logger.info(`Reading radar source from: ${radarCsvPath}`);
