@@ -31,6 +31,9 @@ const top10Companies = top10CompaniesData as CompanyData[]
 
 <template>
   <div>
+    <!-- Top 10 Companies Region Map Section -->
+    <TopCompanyMapSection />
+
     <!-- Region Emission Map Section -->
     <RegionEmissionSection />
 
@@ -67,7 +70,7 @@ const top10Companies = top10CompaniesData as CompanyData[]
       <ContentContainer>
         <UPageHero
           title="前十大溫室氣體排放企業"
-          class="custom-hero"
+          class="custom-hero text-4xl"
           :ui="{container: 'gap-8 lg:pb-8 md:pb-8 sm:gap-8 pb-8'}"
         >
         </UPageHero>
