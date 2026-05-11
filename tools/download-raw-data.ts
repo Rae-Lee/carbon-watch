@@ -31,6 +31,14 @@ const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID;
 const TREND_SPREADSHEET_ID = '1JK7KAFMJ_gTychIg4ce5X5EffIjFu9-55rCncQzxtEI';
 const TREND_TABS = ['能源消耗', '溫室氣體排放'];
 
+// 工廠縣市排放歷年 SOT — factory-level emissions by year and county.
+// Powers the regional emission cards (currently filtered to ROC 113 / 2024 in
+// the transform). The tab is named "原始檔（勿動）" upstream; we rename to a
+// descriptive CSV.
+const FACTORY_SOT_SPREADSHEET_ID = '125IPdMEUeLGzOF95ga3wsGV3jhP4J5wqbrIQt9KGjI4';
+const FACTORY_SOT_TAB = '原始檔（勿動）';
+const FACTORY_SOT_CSV_NAME = '工廠縣市排放_歷年.csv';
+
 // Output directory for raw CSV files
 const RAW_DATA_DIR = join(__dirname, '..', 'raw-data');
 
@@ -175,6 +183,31 @@ async function downloadRawData() {
       }
     }
     logger.info(`Trend tabs refreshed: ${trendSuccess}/${TREND_TABS.length}`);
+
+    // Fetch factory-level region SOT (best-effort; non-fatal on failure)
+    logger.info(`Fetching factory SOT tab "${FACTORY_SOT_TAB}" from ${FACTORY_SOT_SPREADSHEET_ID}`);
+    try {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: FACTORY_SOT_SPREADSHEET_ID,
+        range: FACTORY_SOT_TAB,
+      });
+      const values = response.data.values;
+      if (values && values.length > 0) {
+        const csv = arrayToCSV(values);
+        const filePath = join(RAW_DATA_DIR, FACTORY_SOT_CSV_NAME);
+        writeFileSync(filePath, csv, 'utf-8');
+        logger.success(
+          `Saved factory SOT to ${FACTORY_SOT_CSV_NAME} (${values.length} rows, ${values[0]?.length || 0} columns)`
+        );
+      } else {
+        logger.info('Factory SOT tab is empty, skipping');
+      }
+    } catch (error) {
+      logger.info(
+        `Could not refresh factory SOT (likely the sheet is not public to this API key). Existing CSV is retained.`
+      );
+      logger.info(`  ${error instanceof Error ? error.message : String(error)}`);
+    }
 
     // Summary
     logger.info('='.repeat(60));

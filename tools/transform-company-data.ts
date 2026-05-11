@@ -434,87 +434,93 @@ function applyLatestEmissionFromTrend(
 }
 
 /**
- * Add per-company top-3 縣市 emission distribution.
- * Source: IV. 企業縣市排放絕對值（公式）.csv (公司全名 × 縣市 absolute matrix).
- * 縣市佔比 = company emission in this county / sum of all 排碳大戶 in this county × 100
- *   (advocacy framing: 該公司在縣市的污染主導地位)
+ * Add per-company top-3 縣市 emission distribution from the upstream SOT
+ * 工廠縣市排放_歷年.csv (factory-level rows with 年度 / 事業統編 / 縣市別 /
+ * 合計排放量). Filtered to ROC year 113 (= 2024). Bridged to companyList via
+ * 事業統編 — more reliable than 公司全名 string matching.
+ *
+ * 縣市佔比 = company emission in county / sum of all 排碳大戶 emissions in
+ *           that county × 100  (advocacy framing: company's domination of
+ *           the county's emission footprint).
+ *
+ * Year-2024 coverage: ~282/287 companies match; the handful that don't were
+ * registered as 排碳大戶 in earlier years but fall under the 25,000 tCO2e/廠
+ * threshold for 2024 and so are not in this SOT — they keep no regionEmissions
+ * and the county cards hide for them.
  */
-function addRegionEmissionDistribution(
+function addRegionEmissionsFromFactorySOT(
   companyList: Record<string, string>[],
-  regionAbsoluteData: Record<string, string>[],
-  logger: Logger
+  factoryRows: Record<string, string>[],
+  logger: Logger,
+  yearFilter: string = '113'
 ): Record<string, string>[] {
-  if (regionAbsoluteData.length === 0) {
-    logger.info('No region absolute data; skipping');
-    return companyList;
-  }
-
-  const KEY_COLUMN = '於該縣市合計排放量(公噸CO2e)';
-  const TOTAL_COLUMN = '全台';
-  const allFields = Object.keys(regionAbsoluteData[0]!);
-  const countyColumns = allFields.filter(f => f !== KEY_COLUMN && f !== TOTAL_COLUMN);
-
   const parseAmount = (raw: string | undefined): number => {
     if (!raw) return 0;
     const n = parseFloat(raw.replace(/,/g, ''));
     return isNaN(n) ? 0 : n;
   };
 
-  // County totals: sum each county column across all companies
-  const countyTotals: Record<string, number> = {};
-  for (const county of countyColumns) {
-    countyTotals[county] = regionAbsoluteData.reduce(
-      (sum, row) => sum + parseAmount(row[county]),
-      0
-    );
-  }
+  // 桃園 became 桃園市 in 2014 but legacy rows still tag 桃園縣; collapse.
+  const normalizeCounty = (county: string): string =>
+    county === '桃園縣' ? '桃園市' : county;
 
-  // Lookup company row by normalized 公司全名 (handle 臺/台 异体字)
-  const normalizeName = (name: string) => name.replace(/臺/g, '台');
-  const rowByFullName = new Map<string, Record<string, string>>();
-  for (const row of regionAbsoluteData) {
-    const fullName = row[KEY_COLUMN]?.trim();
-    if (fullName) rowByFullName.set(normalizeName(fullName), row);
+  // Some UBN cells have a leading tab from the SOT formatting.
+  const normalizeUBN = (raw: string | undefined): string =>
+    (raw || '').replace(/\t/g, '').trim();
+
+  // Aggregate (UBN, county) → emission for the chosen year + per-county totals
+  const byUBN = new Map<string, Map<string, number>>();
+  const countyTotals: Record<string, number> = {};
+  let yearRowCount = 0;
+
+  for (const row of factoryRows) {
+    if (row['年度'] !== yearFilter) continue;
+    yearRowCount++;
+    const ubn = normalizeUBN(row['事業統編']);
+    const county = normalizeCounty((row['縣市別'] || '').trim());
+    const amt = parseAmount(row['合計排放量(公噸CO2e)']);
+    if (!ubn || !county || amt <= 0) continue;
+
+    if (!byUBN.has(ubn)) byUBN.set(ubn, new Map());
+    const ubnMap = byUBN.get(ubn)!;
+    ubnMap.set(county, (ubnMap.get(county) || 0) + amt);
+    countyTotals[county] = (countyTotals[county] || 0) + amt;
   }
+  logger.info(
+    `Factory SOT year ${yearFilter}: ${yearRowCount} rows, ${byUBN.size} 事業統編, ${Object.keys(countyTotals).length} 縣市`
+  );
 
   let attached = 0;
-  let missingFullName = 0;
-  let notInRegionCsv = 0;
+  let noUBN = 0;
+  let noMatch = 0;
 
   for (const company of companyList) {
-    const fullName = company['公司全名'];
-    if (!fullName) {
-      missingFullName++;
-      continue;
-    }
-    const row = rowByFullName.get(normalizeName(fullName));
-    if (!row) {
-      notInRegionCsv++;
-      continue;
-    }
+    const ubn = (company['事業統編'] || '').trim();
+    if (!ubn) { noUBN++; continue; }
 
-    const items: Array<{ 縣市: string; 排放量: number; 縣市佔比: number }> = [];
-    for (const county of countyColumns) {
-      const val = parseAmount(row[county]);
-      if (val > 0) {
+    const ubnMap = byUBN.get(ubn);
+    if (!ubnMap) { noMatch++; continue; }
+
+    const items = Array.from(ubnMap.entries())
+      .map(([county, amt]) => {
         const total = countyTotals[county] || 0;
-        const share = total > 0 ? Math.round((val / total) * 1000) / 10 : 0;
-        items.push({ 縣市: county, 排放量: val, 縣市佔比: share });
-      }
-    }
+        const share = total > 0 ? Math.round((amt / total) * 1000) / 10 : 0;
+        return { 縣市: county, 排放量: Math.round(amt), 縣市佔比: share };
+      })
+      .sort((a, b) => b.排放量 - a.排放量)
+      .slice(0, 3);
 
-    items.sort((a, b) => b.排放量 - a.排放量);
-    const top3 = items.slice(0, 3);
-
-    if (top3.length > 0) {
-      (company as Record<string, unknown>)['regionEmissions'] = top3;
+    if (items.length > 0) {
+      (company as Record<string, unknown>)['regionEmissions'] = items;
       attached++;
     }
   }
 
-  logger.success(`Attached regionEmissions to ${attached}/${companyList.length} companies`);
-  if (missingFullName > 0) logger.info(`  ${missingFullName} skipped (no 公司全名)`);
-  if (notInRegionCsv > 0) logger.info(`  ${notInRegionCsv} not in IV. 企業縣市排放絕對值（公式）.csv`);
+  logger.success(
+    `regionEmissions (factory SOT, ${yearFilter}): ${attached}/${companyList.length}`
+  );
+  if (noUBN > 0) logger.info(`  ${noUBN} skipped (no 事業統編)`);
+  if (noMatch > 0) logger.info(`  ${noMatch} 事業統編 not in SOT 工廠縣市排放_歷年`);
 
   return companyList;
 }
@@ -655,12 +661,14 @@ async function transformCompanyData() {
     logger.info(`Parsed ${trendCsvData.length} records from 溫室氣體排放.csv`);
     companyList = applyLatestEmissionFromTrend(companyList, trendCsvData, logger);
 
-    // Add per-company top-3 縣市 emission distribution
-    const regionAbsCsvPath = join(RAW_DATA_DIR, 'IV. 企業縣市排放絕對值（公式）.csv');
-    logger.info(`Reading region emission absolute data from: ${regionAbsCsvPath}`);
-    const regionAbsoluteData = parseCSV(readFileSync(regionAbsCsvPath, 'utf-8'));
-    logger.info(`Parsed ${regionAbsoluteData.length} records from IV. 企業縣市排放絕對值（公式）.csv`);
-    companyList = addRegionEmissionDistribution(companyList, regionAbsoluteData, logger);
+    // Add per-company top-3 縣市 emission distribution from factory-level SOT
+    // (year 113 / 2024). Bridged via 事業統編. Replaces the older Sheet B IV. csv
+    // snapshot, which was 2023 data.
+    const factorySotPath = join(RAW_DATA_DIR, '工廠縣市排放_歷年.csv');
+    logger.info(`Reading factory-level emission SOT from: ${factorySotPath}`);
+    const factoryRows = parseCSV(readFileSync(factorySotPath, 'utf-8'));
+    logger.info(`Parsed ${factoryRows.length} factory rows`);
+    companyList = addRegionEmissionsFromFactorySOT(companyList, factoryRows, logger);
 
     // 4. Override radar score columns from 雷達圖_Data (single source of truth).
     // 易讀版 carries duplicate score columns that go stale if its snapshot is not
