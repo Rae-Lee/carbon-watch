@@ -352,50 +352,83 @@ function addRepresentativeCity(
 }
 
 /**
- * Compute YoY 排放量 delta from hub 總碳排放量_2023 vs _2024.
- * Adds company['年度變化'] = number (percentage, 1 decimal) or null when either
- * year is missing. CompanyHeader.vue hides the YoY badge when null.
+ * Override the 年碳排 (latest emission) and 年度變化 (YoY) on each company using
+ * the SOT 溫室氣體排放 tab in raw-data/溫室氣體排放.csv (the same SOT that powers
+ * the trend charts). Falls back to leaving the 易讀版 value in place for the
+ * handful of companies whose 公司全名 doesn't appear in the SOT tab.
+ *
+ * Why: 易讀版 carries a 排放量 snapshot from an older year (台塑化's
+ * 24,467,047 was the 2022 number), and the hub 總碳排放量_2024 column was also
+ * stale, so CompanyHeader was displaying outdated numbers and an incorrect
+ * 較去年 delta. The SOT tab keeps 2022/2023/2024 fields in lockstep.
  */
-function addEmissionYoYDelta(
+function applyLatestEmissionFromTrend(
   companyList: Record<string, string>[],
-  hubData: Record<string, string>[],
+  trendCsvData: Record<string, string>[],
   logger: Logger
 ): Record<string, string>[] {
-  const parseEmission = (raw: string | undefined): number | null => {
+  const parseNum = (raw: string | undefined): number | null => {
     if (!raw) return null;
-    const n = parseFloat(raw.replace(/,/g, ''));
-    return isNaN(n) || n <= 0 ? null : n;
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === 'NA' || trimmed === 'N/A' || trimmed.startsWith('#')) {
+      return null;
+    }
+    const n = parseFloat(trimmed.replace(/,/g, ''));
+    return isNaN(n) ? null : n;
   };
 
-  const hub2023 = new Map<string, number>();
-  const hub2024 = new Map<string, number>();
-  for (const row of hubData) {
-    const abbr = row['公司簡稱']?.trim();
-    if (!abbr) continue;
-    const e2023 = parseEmission(row['總碳排放量_2023']);
-    const e2024 = parseEmission(row['總碳排放量_2024']);
-    if (e2023 !== null) hub2023.set(abbr, e2023);
-    if (e2024 !== null) hub2024.set(abbr, e2024);
+  // Build 公司全名 → {2023, 2024} map from the SOT 溫室氣體排放 CSV.
+  const byFullName = new Map<string, { e2023: number | null; e2024: number | null }>();
+  for (const row of trendCsvData) {
+    const name = row['公司']?.trim();
+    if (!name) continue;
+    byFullName.set(name, {
+      e2023: parseNum(row['2023總排放']),
+      e2024: parseNum(row['2024總排放']),
+    });
   }
+  logger.info(`Loaded latest-year emissions for ${byFullName.size} companies from 溫室氣體排放.csv`);
 
-  let computed = 0;
-  let missing = 0;
+  let updatedEmission = 0;
+  let updatedDelta = 0;
+  let missingMatch = 0;
+
   for (const company of companyList) {
-    const abbr = company['公司'];
-    const e2023 = hub2023.get(abbr);
-    const e2024 = hub2024.get(abbr);
-    if (e2023 === undefined || e2024 === undefined) {
-      (company as Record<string, unknown>)['年度變化'] = null;
-      missing++;
+    const fullName = company['公司全名'];
+    const entry = fullName ? byFullName.get(fullName) : undefined;
+
+    if (!entry) {
+      // Keep existing 易讀版 value; null out 年度變化 unless already computed elsewhere.
+      if ((company as Record<string, unknown>)['年度變化'] === undefined) {
+        (company as Record<string, unknown>)['年度變化'] = null;
+      }
+      missingMatch++;
       continue;
     }
-    const delta = ((e2024 - e2023) / e2023) * 100;
-    (company as Record<string, unknown>)['年度變化'] = Math.round(delta * 10) / 10;
-    computed++;
+
+    if (entry.e2024 !== null && entry.e2024 > 0) {
+      company['溫室氣體排放量（公噸二氧化碳當量）'] = Math.round(entry.e2024).toLocaleString('en-US');
+      updatedEmission++;
+    }
+
+    if (entry.e2023 !== null && entry.e2023 > 0 && entry.e2024 !== null && entry.e2024 > 0) {
+      const delta = ((entry.e2024 - entry.e2023) / entry.e2023) * 100;
+      (company as Record<string, unknown>)['年度變化'] = Math.round(delta * 10) / 10;
+      updatedDelta++;
+    } else {
+      (company as Record<string, unknown>)['年度變化'] = null;
+    }
   }
 
-  logger.success(`Computed 年度變化 (YoY emission delta) for ${computed}/${companyList.length} companies`);
-  if (missing > 0) logger.info(`  ${missing} skipped (missing 2023 or 2024 emission data)`);
+  logger.success(
+    `Overrode 年碳排 from SOT 溫室氣體排放: ${updatedEmission}/${companyList.length}`
+  );
+  logger.success(
+    `Computed 年度變化 from SOT 2023→2024: ${updatedDelta}/${companyList.length}`
+  );
+  if (missingMatch > 0) {
+    logger.info(`  ${missingMatch} companies fell through (公司全名 not in SOT tab)`);
+  }
 
   return companyList;
 }
@@ -613,8 +646,14 @@ async function transformCompanyData() {
     // Add 代表縣市 to company list (with hub fallback)
     companyList = addRepresentativeCity(companyList, allCompanyData, companyDetailData, hubData, logger);
 
-    // Compute YoY emission delta from hub 總碳排放量_2023 vs _2024
-    companyList = addEmissionYoYDelta(companyList, hubData, logger);
+    // Override 年碳排 (latest 2024) + 年度變化 (2024 vs 2023) from SOT 溫室氣體排放 tab.
+    // 易讀版 carries a stale snapshot (台塑化 24,467,047 is the 2022 value), and hub
+    // 總碳排放量_2024 is also stale; the SOT trend tab is the canonical source.
+    const trendCsvPath = join(RAW_DATA_DIR, '溫室氣體排放.csv');
+    logger.info(`Reading SOT 溫室氣體排放 from: ${trendCsvPath}`);
+    const trendCsvData = parseCSV(readFileSync(trendCsvPath, 'utf-8'));
+    logger.info(`Parsed ${trendCsvData.length} records from 溫室氣體排放.csv`);
+    companyList = applyLatestEmissionFromTrend(companyList, trendCsvData, logger);
 
     // Add per-company top-3 縣市 emission distribution
     const regionAbsCsvPath = join(RAW_DATA_DIR, 'IV. 企業縣市排放絕對值（公式）.csv');
