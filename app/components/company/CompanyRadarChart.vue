@@ -61,7 +61,8 @@ function drawRadarChart() {
   const visualPadding = 20
   const radius = chartArea / 2 - visualPadding
 
-  const levels = 3 // 0, 1, 2, 3 scores
+  // Score 0..3 maps to ring 1..4 so a 0 still draws a visible innermost polygon.
+  const levels = 4
   const axes = props.companyData.length
 
   const svg = d3.select(chartRef.value)
@@ -69,7 +70,7 @@ function drawRadarChart() {
     .attr('width', '100%')
     .attr('viewBox', `0 0 ${totalSize} ${totalSize}`)
     .attr('preserveAspectRatio', 'xMidYMid meet')
-  
+
   const center = totalSize / 2
   const g = svg.append('g')
     .attr('transform', `translate(${center}, ${center})`)
@@ -77,11 +78,11 @@ function drawRadarChart() {
   const angleSlice = (Math.PI * 2) / axes
 
   const rScale = d3.scaleLinear()
-    .domain([0, 3])
+    .domain([0, levels])
     .range([0, radius])
 
   // -------- GRID --------
-  for (let level = 0; level <= levels; level++) {
+  for (let level = 1; level <= levels; level++) {
     const r = rScale(level)
     const points: string[] = []
 
@@ -93,7 +94,7 @@ function drawRadarChart() {
     g.append('polygon')
       .attr('points', points.join(' '))
       .attr('fill', 'none')
-      .attr('stroke', getCSSVariableValue(props.scoreLegend[level]?.color || '--color-gray-400'))
+      .attr('stroke', getCSSVariableValue(props.scoreLegend[level - 1]?.color || '--color-gray-400'))
       .attr('stroke-width', 1)
       .attr('stroke-dasharray', '4,4')
   }
@@ -116,8 +117,9 @@ function drawRadarChart() {
   const generateRadarPath = (data: RadarDataPoint[]): string => {
     const points = data.map((d, i) => {
       const angle = angleSlice * i - Math.PI / 2
-      const x = rScale(d.value) * Math.cos(angle)
-      const y = rScale(d.value) * Math.sin(angle)
+      const r = rScale(d.value + 1)
+      const x = r * Math.cos(angle)
+      const y = r * Math.sin(angle)
       return `${x},${y}`
     })
     return `M${points.join('L')}Z`
