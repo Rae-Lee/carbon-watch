@@ -20,7 +20,7 @@ const formattedEmission = computed(() => {
         佔縣市碳排 {{ 縣市佔比 }}%
       </span>
     </div>
-    <div class="h-5 bg-surface-warm rounded mb-1">
+    <div class="h-4 bg-surface-warm rounded mb-1">
       <div
         class="h-full bg-earth-brown-light rounded transition-all duration-300"
         :style="{ width: `${Math.min(縣市佔比, 100)}%` }"
