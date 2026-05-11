@@ -39,6 +39,9 @@ jobs:
 
       - name: Transform trend data
         run: npm run transform-trend-data
+
+      - name: Transform top-10 company region data
+        run: npm run transform-top-company-region-data
       
       - name: Commit and push changes
         run: |
