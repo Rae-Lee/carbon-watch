@@ -89,9 +89,11 @@ function parseAmount(raw: string | undefined): number {
   return isNaN(num) ? 0 : num;
 }
 
-// 桃園 became 桃園市 in 2014 but some legacy rows still tag 桃園縣; collapse.
+// Normalize to the topojson convention (台 not 臺) and post-2014 桃園市,
+// so 排放縣市 strings match TaiwanMap highlighting.
 function normalizeCounty(county: string): string {
-  return county === '桃園縣' ? '桃園市' : county;
+  const taSwapped = county.replace(/臺/g, '台');
+  return taSwapped === '桃園縣' ? '桃園市' : taSwapped;
 }
 
 function normalizeUBN(raw: string | undefined): string {
@@ -132,15 +134,24 @@ async function transformTopCompanyRegionData() {
     });
 
     // 4) Load factory SOT and build (UBN → county → emission) for year 113.
+    //    Restricted to UBNs in our 287-list so the per-county breakdown lines
+    //    up with the region-emission-list and detail-page county shares.
+    const allowedUBNs = new Set<string>();
+    for (const c of companies) {
+      const u = ((c['事業統編'] as string) || '').trim();
+      if (u) allowedUBNs.add(u);
+    }
+
     const factoryPath = join(RAW_DATA_DIR, '工廠縣市排放_歷年.csv');
     const factoryRows = parseCSV(readFileSync(factoryPath, 'utf-8'));
     const byUBN = new Map<string, Map<string, number>>();
     for (const row of factoryRows) {
       if (row['年度'] !== FACTORY_SOT_YEAR) continue;
       const ubn = normalizeUBN(row['事業統編']);
+      if (!ubn || !allowedUBNs.has(ubn)) continue;
       const county = normalizeCounty((row['縣市別'] || '').trim());
       const amt = parseAmount(row['合計排放量(公噸CO2e)']);
-      if (!ubn || !county || amt <= 0) continue;
+      if (!county || amt <= 0) continue;
       if (!byUBN.has(ubn)) byUBN.set(ubn, new Map());
       const m = byUBN.get(ubn)!;
       m.set(county, (m.get(county) || 0) + amt);

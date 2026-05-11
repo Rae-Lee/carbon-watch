@@ -460,13 +460,26 @@ function addRegionEmissionsFromFactorySOT(
     return isNaN(n) ? 0 : n;
   };
 
-  // 桃園 became 桃園市 in 2014 but legacy rows still tag 桃園縣; collapse.
-  const normalizeCounty = (county: string): string =>
-    county === '桃園縣' ? '桃園市' : county;
+  // Normalize to the topojson convention (台 not 臺) and post-2014 桃園市,
+  // so 排放縣市 strings match TaiwanMap highlighting.
+  const normalizeCounty = (county: string): string => {
+    const taSwapped = county.replace(/臺/g, '台');
+    return taSwapped === '桃園縣' ? '桃園市' : taSwapped;
+  };
 
   // Some UBN cells have a leading tab from the SOT formatting.
   const normalizeUBN = (raw: string | undefined): string =>
     (raw || '').replace(/\t/g, '').trim();
+
+  // Whitelist of UBNs in our 287-company list — scopes county totals and
+  // 企業數 to "排碳大戶 in this site's dataset", which naturally excludes
+  // 電力供應業 (台電 et al. are not in our list) and avoids double-counting
+  // consumer Scope 2 against producer Scope 1.
+  const allowedUBNs = new Set<string>();
+  for (const c of companyList) {
+    const u = (c['事業統編'] || '').trim();
+    if (u) allowedUBNs.add(u);
+  }
 
   // Aggregate (UBN, county) → emission for the chosen year + per-county totals
   const byUBN = new Map<string, Map<string, number>>();
@@ -477,9 +490,10 @@ function addRegionEmissionsFromFactorySOT(
     if (row['年度'] !== yearFilter) continue;
     yearRowCount++;
     const ubn = normalizeUBN(row['事業統編']);
+    if (!ubn || !allowedUBNs.has(ubn)) continue;
     const county = normalizeCounty((row['縣市別'] || '').trim());
     const amt = parseAmount(row['合計排放量(公噸CO2e)']);
-    if (!ubn || !county || amt <= 0) continue;
+    if (!county || amt <= 0) continue;
 
     if (!byUBN.has(ubn)) byUBN.set(ubn, new Map());
     const ubnMap = byUBN.get(ubn)!;
@@ -487,7 +501,7 @@ function addRegionEmissionsFromFactorySOT(
     countyTotals[county] = (countyTotals[county] || 0) + amt;
   }
   logger.info(
-    `Factory SOT year ${yearFilter}: ${yearRowCount} rows, ${byUBN.size} 事業統編, ${Object.keys(countyTotals).length} 縣市`
+    `Factory SOT year ${yearFilter}: ${yearRowCount} rows total, ${byUBN.size} 事業統編 within our list, ${Object.keys(countyTotals).length} 縣市`
   );
 
   let attached = 0;
