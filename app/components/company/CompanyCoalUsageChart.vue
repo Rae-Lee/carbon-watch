@@ -13,11 +13,30 @@ interface Props {
 const props = defineProps<Props>()
 
 const chartRef = ref<HTMLDivElement | null>(null)
+const containerRef = ref<HTMLDivElement | null>(null)
+const tooltipState = ref<{
+  visible: boolean
+  x: number
+  y: number
+  label: string
+  value: string
+} | null>(null)
+
+const valueFormat = d3.format(',.0f')
 
 onMounted(() => {
   if (chartRef.value && props.data.length > 0) {
     drawChart()
   }
+  const handleResize = () => {
+    if (chartRef.value && props.data.length > 0) {
+      drawChart()
+    }
+  }
+  window.addEventListener('resize', handleResize)
+  onUnmounted(() => {
+    window.removeEventListener('resize', handleResize)
+  })
 })
 
 watch(() => props.data, () => {
@@ -29,7 +48,6 @@ watch(() => props.data, () => {
 function drawChart() {
   if (!chartRef.value || props.data.length === 0) return
 
-  // Clear previous chart
   d3.select(chartRef.value).selectAll('*').remove()
 
   const containerWidth = chartRef.value.clientWidth || 600
@@ -49,7 +67,6 @@ function drawChart() {
   const g = svg.append('g')
     .attr('transform', `translate(${margin.left}, ${margin.top})`)
 
-  // Scales
   const xScale = d3.scaleLinear()
     .domain(d3.extent(props.data, d => d.year) as [number, number])
     .range([0, innerWidth])
@@ -58,20 +75,17 @@ function drawChart() {
     .domain([0, d3.max(props.data, d => d.value) as number * 1.1])
     .range([innerHeight, 0])
 
-  // Area generator
   const area = d3.area<DataPoint>()
     .x(d => xScale(d.year))
     .y0(innerHeight)
     .y1(d => yScale(d.value))
     .curve(d3.curveMonotoneX)
 
-  // Line generator
   const line = d3.line<DataPoint>()
     .x(d => xScale(d.year))
     .y(d => yScale(d.value))
     .curve(d3.curveMonotoneX)
 
-  // Draw area with gradient
   const gradient = svg.append('defs')
     .append('linearGradient')
     .attr('id', 'areaGradient')
@@ -95,7 +109,6 @@ function drawChart() {
     .attr('fill', 'url(#areaGradient)')
     .attr('d', area)
 
-  // Draw line
   g.append('path')
     .datum(props.data)
     .attr('fill', 'none')
@@ -103,20 +116,55 @@ function drawChart() {
     .attr('stroke-width', 2)
     .attr('d', line)
 
-  // Draw data points
-  g.selectAll('.data-point')
+  // Grid lines first (so they sit under the data)
+  g.append('g')
+    .attr('class', 'grid')
+    .selectAll('line')
+    .data(yScale.ticks(5))
+    .enter()
+    .append('line')
+    .attr('x1', 0)
+    .attr('x2', innerWidth)
+    .attr('y1', d => yScale(d))
+    .attr('y2', d => yScale(d))
+    .attr('stroke', '#D9D7CA')
+    .attr('stroke-opacity', 0.25)
+    .attr('stroke-dasharray', '3,3')
+
+  // Data points with hover targets
+  const point = g.selectAll('.coal-point')
     .data(props.data)
     .enter()
-    .append('circle')
-    .attr('class', 'data-point')
-    .attr('cx', d => xScale(d.year))
-    .attr('cy', d => yScale(d.value))
+    .append('g')
+    .attr('class', 'coal-point')
+    .attr('transform', d => `translate(${xScale(d.year)}, ${yScale(d.value)})`)
+
+  point.append('circle')
+    .attr('r', 14)
+    .attr('fill', 'transparent')
+    .attr('cursor', 'pointer')
+    .on('mousemove', (event: MouseEvent, d) => {
+      const containerRect = containerRef.value?.getBoundingClientRect()
+      if (!containerRect) return
+      tooltipState.value = {
+        visible: true,
+        x: event.clientX - containerRect.left,
+        y: event.clientY - containerRect.top,
+        label: `${d.year} 年`,
+        value: `${valueFormat(d.value)} 公噸`,
+      }
+    })
+    .on('mouseleave', () => {
+      tooltipState.value = null
+    })
+
+  point.append('circle')
     .attr('r', 4)
     .attr('fill', '#207443')
     .attr('stroke', 'white')
     .attr('stroke-width', 2)
+    .attr('pointer-events', 'none')
 
-  // X axis
   const xAxis = d3.axisBottom(xScale)
     .tickValues(props.data.map(d => d.year))
     .tickFormat(d => String(d))
@@ -131,7 +179,6 @@ function drawChart() {
   g.selectAll('.domain, .tick line')
     .attr('stroke', '#D9D7CA')
 
-  // Y axis
   const yAxis = d3.axisLeft(yScale)
     .ticks(5)
     .tickFormat(d => d3.format(',.0f')(d as number))
@@ -144,39 +191,11 @@ function drawChart() {
 
   g.selectAll('.domain, .tick line')
     .attr('stroke', '#D9D7CA')
-
-  // Grid lines
-  g.append('g')
-    .attr('class', 'grid')
-    .selectAll('line')
-    .data(yScale.ticks(5))
-    .enter()
-    .append('line')
-    .attr('x1', 0)
-    .attr('x2', innerWidth)
-    .attr('y1', d => yScale(d))
-    .attr('y2', d => yScale(d))
-    .attr('stroke', '#D9D7CA')
-    .attr('stroke-opacity', 0.3)
-    .attr('stroke-dasharray', '3,3')
 }
-
-// Redraw on window resize
-onMounted(() => {
-  const handleResize = () => {
-    if (chartRef.value && props.data.length > 0) {
-      drawChart()
-    }
-  }
-  window.addEventListener('resize', handleResize)
-  onUnmounted(() => {
-    window.removeEventListener('resize', handleResize)
-  })
-})
 </script>
 
 <template>
-  <div class="mt-8">
+  <div ref="containerRef" class="mt-8 relative">
     <h3 class="text-lg font-bold text-earth-brown mb-4">
       歷年燃煤使用量
     </h3>
@@ -186,6 +205,16 @@ onMounted(() => {
         <span class="w-3 h-0.5 bg-green-deep" />
         <span>燃煤使用量</span>
       </div>
+    </div>
+    <div
+      v-if="tooltipState && tooltipState.visible"
+      class="pointer-events-none absolute z-10 px-2.5 py-1.5 rounded-md bg-surface-warm border border-earth-brown/30 shadow-lg text-xs text-earth-brown whitespace-nowrap"
+      :style="{ left: `${tooltipState.x + 12}px`, top: `${tooltipState.y - 8}px` }"
+    >
+      <div class="font-semibold">
+        {{ tooltipState.label }}
+      </div>
+      <div>{{ tooltipState.value }}</div>
     </div>
   </div>
 </template>

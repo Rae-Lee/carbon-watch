@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import type { CompanyData } from '~/types/company'
 import coalUsageMap from '~/assets/data/coal-usage-map.json'
+import trendMap from '~/assets/data/trend-map.json'
+
+type TrendPoint = { year: number; value: number }
+type TrendEntry = {
+  ghg?: TrendPoint[]
+  ghgIntensity?: TrendPoint[]
+  energy?: TrendPoint[]
+  energyIntensity?: TrendPoint[]
+}
 
 interface Props {
   company: CompanyData
@@ -46,6 +55,13 @@ const coalUsageData = computed(() => {
   const fullName = props.company['公司全名']
   if (!fullName) return []
   return (coalUsageMap as Record<string, Array<{ year: number; value: number }>>)[fullName] || []
+})
+
+// Trend data (排放量、密集度、能源、能源密集度) keyed by 公司全名
+const trendEntry = computed<TrendEntry>(() => {
+  const fullName = props.company['公司全名']
+  if (!fullName) return {}
+  return (trendMap as Record<string, TrendEntry>)[fullName] || {}
 })
 
 const parseParagraph = (value?: string): string => {
@@ -128,6 +144,14 @@ const 淨零年預估排放量 = computed(() => {
 
     <!-- Reduction Strategy Section -->
     <CompanyReductionStrategy :策略內容="companyReductionStrategy" />
+
+    <!-- 排放 / 能源歷年趨勢 -->
+    <CompanyTrendCharts
+      :ghg="trendEntry.ghg"
+      :ghg-intensity="trendEntry.ghgIntensity"
+      :energy="trendEntry.energy"
+      :energy-intensity="trendEntry.energyIntensity"
+    />
 
     <!-- Coal Usage Chart Section -->
     <CompanyCoalUsageChart

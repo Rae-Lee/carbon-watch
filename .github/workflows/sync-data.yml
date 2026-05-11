@@ -36,6 +36,9 @@ jobs:
       
       - name: Transform region map data
         run: npm run transform-region-map-data
+
+      - name: Transform trend data
+        run: npm run transform-trend-data
       
       - name: Commit and push changes
         run: |

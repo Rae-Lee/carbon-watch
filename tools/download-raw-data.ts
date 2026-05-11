@@ -24,6 +24,13 @@ const __dirname = dirname(__filename);
 const API_KEY = process.env.GOOGLE_SHEETS_API_KEY;
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID;
 
+// 排放 / 能源歷年趨勢 spreadsheet (排碳大戶 168 間 SOT). Hardcoded because it
+// is a stable, public source-of-truth for the trend charts on the company page.
+// If the sheet is not publicly readable with the API key, the trend fetch is
+// skipped and the existing committed CSVs remain in place.
+const TREND_SPREADSHEET_ID = '1JK7KAFMJ_gTychIg4ce5X5EffIjFu9-55rCncQzxtEI';
+const TREND_TABS = ['能源消耗', '溫室氣體排放'];
+
 // Output directory for raw CSV files
 const RAW_DATA_DIR = join(__dirname, '..', 'raw-data');
 
@@ -138,6 +145,36 @@ async function downloadRawData() {
         failureCount++;
       }
     }
+
+    // Fetch trend spreadsheet tabs (best-effort; non-fatal on failure)
+    logger.info(`Fetching trend spreadsheet tabs from ${TREND_SPREADSHEET_ID}`);
+    let trendSuccess = 0;
+    for (const tab of TREND_TABS) {
+      try {
+        const response = await sheets.spreadsheets.values.get({
+          spreadsheetId: TREND_SPREADSHEET_ID,
+          range: tab,
+        });
+        const values = response.data.values;
+        if (!values || values.length === 0) {
+          logger.info(`Trend tab "${tab}" is empty, skipping`);
+          continue;
+        }
+        const csv = arrayToCSV(values);
+        const filePath = join(RAW_DATA_DIR, `${tab}.csv`);
+        writeFileSync(filePath, csv, 'utf-8');
+        logger.success(
+          `Saved trend "${tab}" to ${tab}.csv (${values.length} rows, ${values[0]?.length || 0} columns)`
+        );
+        trendSuccess++;
+      } catch (error) {
+        logger.info(
+          `Could not refresh trend tab "${tab}" (likely the sheet is not public to this API key). Existing CSV is retained.`
+        );
+        logger.info(`  ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    logger.info(`Trend tabs refreshed: ${trendSuccess}/${TREND_TABS.length}`);
 
     // Summary
     logger.info('='.repeat(60));
