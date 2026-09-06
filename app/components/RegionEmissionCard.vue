@@ -1,68 +1,157 @@
 <script setup lang="ts">
 interface Props {
   縣市: string
-  總排放量: number
-  總排放量佔比: number
-  企業數: number
+  總排放量?: number
+  總排放量佔比?: number
+  企業數?: number
+  maxBars?: number
   isActive?: boolean
   shouldBlink?: boolean
+  disabled?: boolean
 }
 
 const props = defineProps<Props>()
 
-// Format large numbers with thousand separators
-const formattedEmissions = computed(() => {
-  return props.總排放量.toLocaleString('zh-TW')
+const heatColor = computed(() => {
+  const p = props.總排放量佔比 ?? 0
+  if (p >= 20) return 'var(--color-heat-6)'
+  if (p >= 10) return 'var(--color-heat-5)'
+  if (p >= 5)  return 'var(--color-heat-4)'
+  if (p >= 2)  return 'var(--color-heat-3)'
+  if (p >= 0.5) return 'var(--color-heat-2)'
+  return 'var(--color-heat-1)'
 })
+
+const barWidth = computed(() => {
+  if (!props.maxBars || !props.總排放量佔比) return '0%'
+  return (props.總排放量佔比 / props.maxBars * 100).toFixed(1) + '%'
+})
+
+const formattedWanTon = computed(() =>
+  props.總排放量
+    ? Math.round(props.總排放量 / 10000).toLocaleString('zh-TW') + '萬噸'
+    : ''
+)
 </script>
 
 <template>
   <div
-    class="bg-surface-mint rounded-xl p-4 shadow-md transition-all duration-300 cursor-pointer border-2"
-    :class="[
-      isActive
-        ? 'border-green-mint shadow-lg'
-        : 'border-green-deep/40 hover:border-green-mint/60 hover:shadow-xl hover:-translate-y-0.5',
-      shouldBlink ? 'blink-animation' : ''
-    ]"
+    class="region-item"
+    :class="{ active: isActive && !disabled, blink: shouldBlink, disabled }"
+    :style="isActive && !disabled ? { borderLeftColor: heatColor } : {}"
   >
-    <div class="flex justify-between items-center gap-4">
-      <div class="flex-1 min-w-0">
-        <h3 class="text-xl sm:text-xl text-lg font-bold font-semibold text-green-mint mb-2 flex items-baseline gap-2 flex-wrap">
-          {{ 縣市 }}
-          <span class="text-sm sm:text-sm text-xs font-normal text-gray-400">| {{ 企業數 }} 家企業</span>
-        </h3>
-        <p class="text-base sm:text-base text-sm text-earth-brown m-0">
-          {{ formattedEmissions }} 公噸 CO<sub class="text-xs">2</sub>e
-        </p>
+    <div class="region-main">
+      <div class="region-name">
+        {{ 縣市 }}<span v-if="!disabled && 企業數">{{ 企業數 }} 家企業</span>
       </div>
-      <div class="flex-shrink-0">
-        <div class="sm:text-3xl text-2xl font-bold text-green-mint text-right leading-none">
-          {{ 總排放量佔比 }}%
-        </div>
+      <div v-if="disabled" class="region-none">境內無製造業排碳大戶</div>
+      <div v-else class="region-bar-wrap">
+        <div class="region-bar-fill" :style="{ width: barWidth, background: heatColor }" />
       </div>
+    </div>
+    <div v-if="!disabled" class="region-right">
+      <div class="region-pct">{{ 總排放量佔比 }}%</div>
+      <div class="region-ton">{{ formattedWanTon }}</div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Blink animation */
-@keyframes blink {
-  0%, 100% {
-    background-color: var(--color-surface-mint);
-  }
-  25% {
-    background-color: var(--color-green-forest);
-  }
-  50% {
-    background-color: var(--color-surface-mint);
-  }
-  75% {
-    background-color: var(--color-green-forest);
-  }
+.region-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--color-bg-border);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
 }
 
-.blink-animation {
+.region-item:hover {
+  background: var(--color-bg-elevated);
+}
+
+.region-item.active {
+  background: var(--color-bg-elevated);
+}
+
+.region-item.disabled {
+  cursor: default;
+}
+
+.region-item.disabled:hover {
+  background: transparent;
+}
+
+.region-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.region-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.region-item.disabled .region-name {
+  color: var(--color-text-muted);
+}
+
+.region-name span {
+  font-size: 10px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.region-none {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.region-bar-wrap {
+  margin-top: 5px;
+  height: 4px;
+  background: var(--color-bg-overlay);
+  border-radius: 2px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.region-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.region-right {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.region-pct {
+  font-size: 13px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.region-ton {
+  font-size: 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--color-text-muted);
+}
+
+@keyframes blink {
+  0%, 100% { background: transparent; }
+  25%, 75% { background: var(--color-bg-elevated); }
+}
+
+.region-item.blink {
   animation: blink 3s ease-in-out;
 }
 </style>

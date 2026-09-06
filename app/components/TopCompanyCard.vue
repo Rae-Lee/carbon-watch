@@ -1,43 +1,104 @@
 <script setup lang="ts">
 defineProps<{
+  rank: number
   公司全名: string
   全台排放量: number
   全台佔比: number
   isActive: boolean
-  compact?: boolean
 }>()
 
 defineEmits<{ click: [] }>()
 
-const formatEmissions = (n: number) => n.toLocaleString('zh-TW')
+const formatEmissions = (n: number) =>
+  Math.round(n / 10000).toLocaleString('zh-TW') + '萬噸'
 </script>
 
 <template>
-  <button
-    :class="compact ? 'text-left flex-none w-[180px] snap-start' : 'w-full text-left'"
-    @click="$emit('click')"
-  >
-    <div
-      class="rounded-xl shadow-md transition-all duration-200 cursor-pointer border-2"
-      :class="[
-        compact ? 'p-3 h-full' : 'p-4',
-        isActive
-          ? 'border-green-pure bg-green-mint/20'
-          : compact
-            ? 'bg-surface-warm border-transparent'
-            : 'bg-surface-warm border-transparent hover:shadow-xl hover:-translate-y-0.5'
-      ]"
-    >
-      <p class="lg:text-xl sm:text-lg text-md font-semibold text-earth-brown leading-snug">{{ 公司全名 }}</p>
-      <p class="font-bold text-green-forest mt-1" :class="compact ? 'text-base' : 'text-lg'">
-        {{ formatEmissions(全台排放量) }}
-        <span class="font-normal text-gray-400" :class="compact ? 'text-xs' : 'text-sm'">
-          {{ compact ? '噸' : '噸溫室氣體排放' }}
-        </span>
-      </p>
-      <p class="text-green-deep mt-0.5" :class="compact ? 'text-xs' : 'text-sm'">
-        佔全台製造業 {{ 全台佔比.toFixed(1) }}%
-      </p>
+  <button class="co-card" :class="{ active: isActive }" @click="$emit('click')">
+    <div class="co-rank">{{ rank }}</div>
+    <div class="co-info">
+      <div class="co-name">{{ 公司全名 }}</div>
+      <div class="co-meta">
+        <span class="co-emis">{{ formatEmissions(全台排放量) }}</span>
+        <span class="co-share">佔全台製造業 {{ 全台佔比.toFixed(1) }}%</span>
+      </div>
     </div>
   </button>
 </template>
+
+<style scoped>
+.co-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-bg-border);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  background: transparent;
+}
+
+.co-card:hover {
+  background: var(--color-bg-elevated);
+}
+
+.co-card.active {
+  background: var(--color-bg-elevated);
+  border-left-color: var(--color-pin);
+}
+
+.co-rank {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--color-bg-overlay);
+  color: var(--color-text-muted);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.co-card.active .co-rank {
+  background: var(--color-pin);
+  color: #fff;
+}
+
+.co-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1.45;
+}
+
+.co-card.active .co-name {
+  color: var(--color-green-200);
+}
+
+.co-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.co-emis {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.co-share {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+</style>

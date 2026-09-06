@@ -2,6 +2,10 @@
 // Use shared company filter logic
 const { filters, filteredCompanies } = useCompanyFilter()
 
+definePageMeta({
+  layout: 'landing',
+})
+
 // SEO metadata
 useHead({
   title: '排碳大戶觀測企業清單 - 易讀版',
@@ -12,17 +16,23 @@ useHead({
 </script>
 
 <template>
-  <div class="py-8">
-    <CompanyListFilter v-model="filters" />
-    
-    <div class="mt-8">
-      <CompanyTable :rows="filteredCompanies" :is-pro="false" :flush="true" />
-    </div>
+  <div class="co-page">
+    <CompanyListFilter v-model="filters" :result-count="filteredCompanies.length" />
 
-    <div v-if="filteredCompanies.length === 0" class="text-center py-12">
-      <p class="text-gray-400">
-        找不到符合條件的企業
-      </p>
+    <div class="co-body">
+      <CompanyTable :rows="filteredCompanies" :is-pro="false" />
     </div>
   </div>
 </template>
+
+<style scoped>
+.co-page {
+  padding: 40px 64px 56px;
+}
+
+@media (max-width: 900px) {
+  .co-page {
+    padding: 32px 24px 40px;
+  }
+}
+</style>

@@ -52,6 +52,11 @@ let g: d3.Selection<SVGGElement, unknown, null, undefined> | null = null
 let zoom: d3.ZoomBehavior<SVGSVGElement, unknown> | null = null
 let markersG: d3.Selection<SVGGElement, unknown, null, undefined> | null = null
 let mapProjection: d3.GeoProjection | null = null
+// Timestamp until which synthetic clicks are ignored (set right after a
+// touch tap is handled, to swallow the browser's follow-up ghost click).
+let suppressClickUntil = 0
+// Start point of an in-progress single-finger touch on a county path.
+let tapOrigin: { x: number, y: number } | null = null
 
 const initMap = async () => {
   if (!svgRef.value || !containerRef.value) return
@@ -107,9 +112,31 @@ const initMap = async () => {
       return isValid ? 'pointer' : 'default'
     })
     .on('click', function(_event: any, d: any) {
+      // On touch devices the tap is handled in `touchend` below (the follow-up
+      // synthetic click is suppressed by the svg touch handlers); skip the
+      // ghost click that may still slip through.
+      if (Date.now() < suppressClickUntil) return
       const regionName = d.properties?.name
       const isValid = props.validRegions.length === 0 || props.validRegions.includes(regionName)
       if (regionName && isValid) {
+        emit('regionClick', regionName)
+      }
+    })
+    .on('touchstart', function(event: any) {
+      tapOrigin = event.touches?.length === 1
+        ? { x: event.touches[0].clientX, y: event.touches[0].clientY }
+        : null
+    })
+    .on('touchend', function(event: any, d: any) {
+      if (!tapOrigin) return
+      const ct = event.changedTouches?.[0]
+      const moved = ct && Math.hypot(ct.clientX - tapOrigin.x, ct.clientY - tapOrigin.y) > 12
+      tapOrigin = null
+      if (moved) return
+      const regionName = d.properties?.name
+      const isValid = props.validRegions.length === 0 || props.validRegions.includes(regionName)
+      if (regionName && isValid) {
+        suppressClickUntil = Date.now() + 700
         emit('regionClick', regionName)
       }
     })
@@ -162,12 +189,12 @@ const initMap = async () => {
   if (props.allowZoom) {
     // For mobile, require 2 fingers for zoom/pan
     if ('ontouchstart' in window) {
-      // Track touch state
+      // Track touch state — single finger is reserved for tapping a county
+      // (handled on the path's touchend); two fingers pan/zoom.
       let activeTouches = 0
 
       svg.on('touchstart', function(event: TouchEvent) {
         activeTouches = event.touches.length
-        // Only allow zoom/pan with 2+ fingers
         if (activeTouches < 2) {
           event.preventDefault()
           return false
@@ -176,7 +203,6 @@ const initMap = async () => {
 
       svg.on('touchmove', function(event: TouchEvent) {
         activeTouches = event.touches.length
-        // Only allow zoom/pan with 2+ fingers
         if (activeTouches < 2) {
           event.preventDefault()
           return false

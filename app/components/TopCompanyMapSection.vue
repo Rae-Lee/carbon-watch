@@ -35,11 +35,7 @@ const hoveredCounty = ref<string | null>(null)
 const mousePos = ref<{ x: number; y: number }>({ x: 0, y: 0 })
 
 const highlightedCounties = computed(() => companies[selectedIndex.value]?.排放縣市 ?? [])
-
-const leftCards = computed(() => companies.slice(0, 5))
-const rightCards = computed(() => companies.slice(5, 10))
-
-const carouselRef = ref<HTMLDivElement | null>(null)
+const selectedShare = computed(() => companies[selectedIndex.value]?.全台佔比.toFixed(1) + '%')
 
 const selectedCompany = computed(() => companies[selectedIndex.value])
 
@@ -122,16 +118,6 @@ const tooltipStyle = computed(() => {
 
 const formatTonnes = (n: number) => n.toLocaleString('en-US')
 
-const scrollCarouselToIndex = (index: number) => {
-  const container = carouselRef.value
-  if (!container || container.offsetParent === null) return
-  // card width 180px + gap 12px (gap-3)
-  const CARD_WIDTH = 180
-  const GAP = 12
-  const cardCenter = index * (CARD_WIDTH + GAP) + CARD_WIDTH / 2
-  container.scrollTo({ left: cardCenter - container.clientWidth / 2, behavior: 'smooth' })
-}
-
 const startRotation = () => {
   if (timer) clearInterval(timer)
   timer = setInterval(() => {
@@ -171,10 +157,6 @@ const handleRegionLeave = (county: string) => {
   }, 80)
 }
 
-watch(selectedIndex, (index) => {
-  nextTick(() => scrollCarouselToIndex(index))
-})
-
 onMounted(() => startRotation())
 onUnmounted(() => {
   if (timer) clearInterval(timer)
@@ -183,84 +165,69 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="py-12 bg-surface-mint">
-    <ContentContainer>
-      <h2 class="text-4xl font-bold text-green-mint mb-8 text-center">
-        前十大碳排企業縣市分布
-      </h2>
+  <section class="top-map-section">
+    <div class="section-head">
+      <h2>前十大碳排企業縣市分布</h2>
+    </div>
+    <p class="hint-note">點選企業可查看該企業工廠分佈與排放狀況</p>
 
-      <!-- Desktop / Tablet layout (lg+) -->
-      <div class="hidden lg:grid gap-4 items-center" style="grid-template-columns: 1fr 2fr 1fr;">
-        <!-- Left: companies 1–5 -->
-        <div class="flex flex-col gap-3">
-          <TopCompanyCard
-            v-for="(company, i) in leftCards"
-            :key="company.公司全名"
-            :公司全名="company.公司全名"
-            :全台排放量="company.全台排放量"
-            :全台佔比="company.全台佔比"
-            :is-active="selectedIndex === i"
-            @click="handleCardClick(i)"
-          />
-        </div>
-
-        <!-- Center: Taiwan map -->
-        <div class="h-[580px]">
-          <TaiwanMap
-            class="!bg-transparent"
-            :highlighted-regions="highlightedCounties"
-            :markers="factoryMarkers"
-            :hover-highlight="false"
-            :allow-zoom="false"
-            @region-hover="handleRegionHover"
-            @region-leave="handleRegionLeave"
-          />
-        </div>
-
-        <!-- Right: companies 6–10 -->
-        <div class="flex flex-col gap-3">
-          <TopCompanyCard
-            v-for="(company, i) in rightCards"
-            :key="company.公司全名"
-            :公司全名="company.公司全名"
-            :全台排放量="company.全台排放量"
-            :全台佔比="company.全台佔比"
-            :is-active="selectedIndex === i + 5"
-            @click="handleCardClick(i + 5)"
-          />
-        </div>
+    <!-- Desktop layout -->
+    <div class="map-layout hidden md:grid">
+      <div class="co-list">
+        <TopCompanyCard
+          v-for="(company, i) in companies"
+          :key="company.公司全名"
+          :rank="i + 1"
+          :公司全名="company.公司全名"
+          :全台排放量="company.全台排放量"
+          :全台佔比="company.全台佔比"
+          :is-active="selectedIndex === i"
+          @click="handleCardClick(i)"
+        />
       </div>
-
-      <!-- Mobile layout (< lg) -->
-      <div class="lg:hidden flex flex-col gap-6">
-        <!-- Map -->
-        <div class="h-[320px]">
-          <TaiwanMap
-            class="!bg-transparent"
-            :highlighted-regions="highlightedCounties"
-            :markers="factoryMarkers"
-            :hover-highlight="false"
-            :allow-zoom="false"
-            @region-hover="handleRegionHover"
-            @region-leave="handleRegionLeave"
-          />
-        </div>
-
-        <!-- Scrollable cards -->
-        <div ref="carouselRef" class="flex gap-3 overflow-x-auto pb-3 snap-x snap-mandatory">
-          <TopCompanyCard
-            v-for="(company, i) in companies"
-            :key="company.公司全名"
-            compact
-            :公司全名="company.公司全名"
-            :全台排放量="company.全台排放量"
-            :全台佔比="company.全台佔比"
-            :is-active="selectedIndex === i"
-            @click="handleCardClick(i)"
-          />
-        </div>
+      <div class="map-container">
+        <div class="dist-figure">{{ selectedShare }}</div>
+        <div class="dist-label">佔全台製造業排放</div>
+        <TaiwanMap
+          class="!bg-transparent"
+          :highlighted-regions="highlightedCounties"
+          :markers="factoryMarkers"
+          :hover-highlight="false"
+          :allow-zoom="false"
+          @region-hover="handleRegionHover"
+          @region-leave="handleRegionLeave"
+        />
       </div>
-    </ContentContainer>
+    </div>
+
+    <!-- Mobile layout -->
+    <div class="md:hidden flex flex-col gap-4">
+      <div class="map-container" style="height: 320px;">
+        <div class="dist-figure dist-figure--sm">{{ selectedShare }}</div>
+        <div class="dist-label dist-label--sm">佔全台製造業排放</div>
+        <TaiwanMap
+          class="!bg-transparent"
+          :highlighted-regions="highlightedCounties"
+          :markers="factoryMarkers"
+          :hover-highlight="false"
+          :allow-zoom="false"
+          @region-hover="handleRegionHover"
+          @region-leave="handleRegionLeave"
+        />
+      </div>
+      <div class="co-list mobile-co-list">
+        <TopCompanyCard
+          v-for="(company, i) in companies"
+          :key="company.公司全名"
+          :rank="i + 1"
+          :公司全名="company.公司全名"
+          :全台排放量="company.全台排放量"
+          :全台佔比="company.全台佔比"
+          :is-active="selectedIndex === i"
+          @click="handleCardClick(i)"
+        />
+      </div>
+    </div>
 
     <Teleport to="body">
       <div
@@ -313,10 +280,92 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-@media (max-width: 767px) {
-  h2 {
-    font-size: 1.75rem;
-    margin-bottom: 2rem;
+.top-map-section {
+  padding: 56px 64px;
+}
+
+.section-head {
+  margin-bottom: 22px;
+}
+
+.section-head h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.015em;
+}
+
+.hint-note {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 18px;
+}
+
+.map-layout {
+  grid-template-columns: 360px 1fr;
+  border: 1px solid var(--color-bg-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.co-list {
+  border-right: 1px solid var(--color-bg-border);
+  overflow-y: auto;
+  max-height: 720px;
+  background: var(--color-bg-surface);
+}
+
+.mobile-co-list {
+  border-right: none;
+  border: 1px solid var(--color-bg-border);
+  border-radius: 12px;
+  max-height: 340px;
+}
+
+.map-container {
+  background: var(--color-bg-surface);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+
+.dist-figure {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  z-index: 5;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 44px;
+  font-weight: 500;
+  color: var(--color-pin);
+  line-height: 1;
+}
+
+.dist-label {
+  position: absolute;
+  top: 70px;
+  left: 24px;
+  z-index: 5;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.dist-figure--sm {
+  font-size: 32px;
+  top: 12px;
+  left: 14px;
+}
+
+.dist-label--sm {
+  top: 50px;
+  left: 14px;
+}
+
+@media (max-width: 900px) {
+  .top-map-section {
+    padding: 40px 24px;
   }
 }
 </style>
