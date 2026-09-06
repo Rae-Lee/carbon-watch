@@ -20,6 +20,10 @@ interface FundData {
   companies: CompanyData[]
 }
 
+definePageMeta({
+  layout: 'landing',
+})
+
 const route = useRoute()
 
 // Get fund code from route params
@@ -27,7 +31,7 @@ const fundCode = computed(() => route.params.slug as string)
 
 // Same fallback as /funds/[slug]/index.vue: when no detail JSON exists (0-排碳大戶
 // fund), use the fund-list.json row + empty companies. The route slug is the
-// fundKey (基金統編, or 基金代號 for the 2 code-less umbrella funds). See
+// fundKey (基金統編, or 基金代號 for the code-less umbrella funds). See
 // index.vue for the full rationale.
 let fundData: FundData
 try {
@@ -49,15 +53,6 @@ const companies = computed<CompanyData[]>(() => {
   return fundData.companies as CompanyData[]
 })
 
-// Identifier line under the title: prefer 基金代號; fall back to 基金統編 for
-// the 10 code-less ESG funds; blank if neither (defensive — never happens).
-const codeDisplay = computed(() => {
-  const m = fundData.meta
-  if (m.基金代號) return `基金代號 ${m.基金代號}`
-  if (m.基金統編) return `${m.基金統編}（基金統一編號）`
-  return ''
-})
-
 // SEO metadata
 useHead({
   title: `${fundData.meta.基金名稱} - 基金詳情 - 專業版`,
@@ -68,35 +63,40 @@ useHead({
 </script>
 
 <template>
-  <div class="py-8 space-y-6">
-    <!-- Header with title and view mode switch -->
-    <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-      <div>
-        <h1 class="text-3xl sm:text-[2.5rem] font-bold text-green-deep mt-0 sm:mt-8 mb-2 leading-[1.2] pb-2">
-          {{ fundData.meta.基金名稱 }}<EsgLeaf v-if="fundData.meta.是否ESG基金" />
-        </h1>
-        <p v-if="codeDisplay" class="text-lg text-earth-brown mt-2">
-          {{ codeDisplay }}
-        </p>
-        <div v-if="fundData.meta.是否ESG基金" class="flex items-center gap-1.5 text-sm text-earth-brown mt-1">
-          <EsgLeaf />
-          <span>：屬於境內發行之 ESG 基金</span>
-        </div>
-      </div>
-      <div class="flex-shrink-0">
-        <ViewModeSwitch :base-path="`/funds/${fundCode}`" />
-      </div>
-    </div>
+  <div class="co-page">
+    <FundDetailHeader
+      :fund-key="fundData.meta.fundKey"
+      :code="fundData.meta.基金代號"
+      :unified-id="fundData.meta.基金統編"
+      :name="fundData.meta.基金名稱"
+      :is-esg="fundData.meta.是否ESG基金"
+    />
 
-    <!-- Company Table -->
-    <div class="mt-8">
-      <CompanyTable :rows="companies" :is-pro="true" :coal-first="true" :flush="true" />
-    </div>
+    <div class="co-body">
+      <CompanyTable :rows="companies" :is-pro="true" :coal-first="true" />
 
-    <div v-if="companies.length === 0" class="text-center py-12">
-      <p class="text-gray-400">
+      <p v-if="companies.length === 0" class="empty-note">
         此基金無排碳大戶企業資料
       </p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.co-page {
+  padding: 40px 64px 56px;
+}
+
+.empty-note {
+  padding: 48px 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 900px) {
+  .co-page {
+    padding: 32px 24px 40px;
+  }
+}
+</style>
