@@ -28,6 +28,8 @@ useHead({
 
 <template>
   <div class="methodology-page">
+    <ULink to="/" class="back-link">← 回首頁</ULink>
+
     <ContentRenderer
       v-if="page"
       :value="page"
@@ -37,150 +39,179 @@ useHead({
 </template>
 
 <style scoped>
+/* Ported from 設計稿 (改設計0828) — 氣候績效指標方法論 明細頁 */
 .methodology-page {
-  padding: 2rem 0;
-  background-color: var(--ui-bg);
-  min-height: 100vh;
+  padding-bottom: 48px;
 }
 
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  transition: color 0.15s;
+}
+
+.back-link:hover {
+  color: var(--color-green-spring);
+}
+
+/* ── 標題 ─────────────────────────────────────────────── */
 .methodology-content :deep(h1) {
-  font-size: 2.5rem;
+  font-size: 30px;
   font-weight: 700;
-  color: var(--color-green-deep);
-  margin-top: 2rem;
-  margin-bottom: 2rem;
+  letter-spacing: -0.02em;
   line-height: 1.2;
-  border-bottom: 3px solid var(--color-green-pure);
-  padding-bottom: 2rem;
-}
-
-@media (max-width: 640px) {
-  .methodology-content :deep(h1) {
-    font-size: 1.875rem;
-    margin-top: 0rem;
-  }
+  color: var(--color-text-primary);
+  /* 設計稿：detail-head 底部 22px + detail-body 起始 */
+  margin-bottom: 22px;
 }
 
 .methodology-content :deep(h2) {
-  font-size: 1.875rem;
-  font-weight: 600;
-  color: var(--color-earth-brown);
-  margin-top: 2.5rem;
-  margin-bottom: 1rem;
-  line-height: 1.3;
-  border-left: 4px solid var(--color-green-spring);
-  padding-left: 1rem;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 36px 0 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--color-bg-border);
 }
-  
-.methodology-content :deep(h2 a),
-.methodology-content :deep(h3 a) {
+
+.methodology-content :deep(h1 a),
+.methodology-content :deep(h2 a) {
   color: inherit;
   text-decoration: none;
   pointer-events: none;
 }
-  
+
+/* ── 內文 ─────────────────────────────────────────────── */
 .methodology-content :deep(p) {
-  font-size: 1rem;
-  line-height: 1.75;
-  color: var(--color-earth-brown);
-  margin-bottom: 1.25rem;
+  max-width: 900px;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--color-text-secondary);
+  margin-bottom: 12px;
 }
 
-.methodology-content :deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1.5rem 0;
-  background-color: var(--color-surface-warm);
-  box-shadow: 0 3px 3px 0 rgba(0, 0, 0, 0.1);
-  border-radius: 0.5rem;
-  overflow: hidden;
-  border: 1px solid var(--color-green-deep);
+.methodology-content :deep(p a) {
+  color: var(--color-link);
 }
 
-.methodology-content :deep(thead) {
-  background-color: var(--color-green-deep);
-  color: white;
+.methodology-content :deep(p a:hover) {
+  color: var(--color-link-hover);
 }
 
-.methodology-content :deep(th) {
-  padding: 1rem;
-  text-align: left;
-  font-weight: 600;
-  font-size: 0.95rem;
-  letter-spacing: 0.025em;
-  color: white;
+/* ── 指標三大面向 ─────────────────────────────────────── */
+.methodology-content :deep(.aspect-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 6px;
 }
 
-.methodology-content :deep(td) {
-  padding: 1rem;
-  border-top: 1px solid rgba(58, 157, 99, 0.25);
-  color: var(--color-earth-brown);
-  font-size: 0.95rem;
-  line-height: 1.6;
+.methodology-content :deep(.aspect) {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-bg-border);
+  border-radius: 12px;
+  padding: 20px 22px;
 }
 
-.methodology-content :deep(tbody tr:nth-child(even)) {
-  background-color: rgba(26, 44, 26, 0.5);
-}
-
-.methodology-content :deep(tbody tr:hover) {
-  background-color: var(--color-surface-warm);
-}
-
-.methodology-content :deep(ul),
-.methodology-content :deep(ol) {
-  margin: 1rem 0 1.5rem 0;
-  padding-left: 1.5rem;
-  color: var(--color-earth-brown);
-}
-
-.methodology-content :deep(ul) {
-  list-style-type: disc;
-}
-
-.methodology-content :deep(ol) {
-  list-style-type: decimal;
-}
-
-.methodology-content :deep(li) {
-  margin-bottom: 0.75rem;
-  color: var(--color-earth-brown);
-  line-height: 1.75;
-  padding-left: 0.5rem;
-}
-
-.methodology-content :deep(li::marker) {
-  color: var(--color-green-pure);
-  font-weight: 600;
-}
-
-.methodology-content :deep(strong) {
-  color: var(--color-green-deep);
-  font-weight: 600;
-}
-
-.methodology-content :deep(h1) {
-  color: var(--color-green-mint);
-  border-bottom-color: var(--color-green-spring);
-}
-
-.methodology-content :deep(h2) {
-  border-left-color: var(--color-green-mint);
-}
-
-.methodology-content :deep(thead) {
-  background-color: var(--color-green-forest);
-}
-
-.methodology-content :deep(tbody tr:hover) {
-  background-color: var(--color-surface-warm);
-}
-
-.methodology-content :deep(table) {
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
-}
-
-.methodology-content :deep(li::marker) {
+.methodology-content :deep(.aspect h4) {
+  font-size: 16px;
+  font-weight: 700;
   color: var(--color-green-spring);
+  margin-bottom: 10px;
 }
+
+.methodology-content :deep(.aspect p) {
+  max-width: none;
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: var(--color-text-secondary);
+  margin-bottom: 0;
+}
+
+/* 十項績效指標列表 → components/content/ClimateIndicatorList.vue */
+
+/* ── 指標評估流程 ─────────────────────────────────────── */
+.methodology-content :deep(.flow) {
+  counter-reset: f;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.methodology-content :deep(.flow li) {
+  display: flex;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-text-secondary);
+}
+
+.methodology-content :deep(.flow li::before) {
+  counter-increment: f;
+  content: counter(f);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--color-bg-overlay);
+  color: var(--color-green-spring);
+  font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
+  font-size: 12px;
+}
+
+/* ── 量化評級標準 ─────────────────────────────────────── */
+.methodology-content :deep(.rule-grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+.methodology-content :deep(.rule) {
+  background: var(--color-bg-surface);
+  border: 1px solid var(--color-bg-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+
+.methodology-content :deep(.rule h5) {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 10px;
+}
+
+.methodology-content :deep(.rule-r) {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+}
+
+.methodology-content :deep(.dot) {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  border-radius: 50%;
+}
+
+.methodology-content :deep(.dot-great) { background: var(--color-status-great); }
+.methodology-content :deep(.dot-ok) { background: var(--color-status-ok); }
+.methodology-content :deep(.dot-warn) { background: var(--color-status-warn); }
+.methodology-content :deep(.dot-bad) { background: var(--color-status-bad); }
 </style>

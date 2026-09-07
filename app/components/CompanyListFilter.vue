@@ -2,19 +2,24 @@
 import regionList from '~/assets/data/region-list.json'
 import industryList from '~/assets/data/industry-list.json'
 
+interface Filters {
+  search: string
+  region: string
+  industry: string
+}
+
 interface Props {
-  modelValue: {
-    search: string
-    region: string
-    industry: string
-  }
+  modelValue: Filters
+  resultCount?: number
 }
 
 interface Emits {
-  (e: 'update:modelValue', value: Props['modelValue']): void
+  (e: 'update:modelValue', value: Filters): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  resultCount: 0,
+})
 const emit = defineEmits<Emits>()
 
 const { setMode } = useViewMode()
@@ -23,205 +28,321 @@ const route = useRoute()
 // Highlight follows the URL — the viewMode cookie can desync from the route
 const isPro = computed(() => route.path.endsWith('/pro'))
 
-// Local state
-const localValue = computed({
-  get: () => props.modelValue,
-  set: (value) => emit('update:modelValue', value)
+const patch = (part: Partial<Filters>) => {
+  emit('update:modelValue', { ...props.modelValue, ...part })
+}
+
+const region = computed({
+  get: () => props.modelValue.region,
+  set: value => patch({ region: value }),
+})
+
+const industry = computed({
+  get: () => props.modelValue.industry,
+  set: value => patch({ industry: value }),
 })
 
 // Region options with "全部地區" as default
-const regionOptions = computed(() => [
-  '全部地區',
-  ...regionList
-])
+const regionOptions = computed(() => ['全部地區', ...regionList])
 
 // Industry options with "全部產業" as default
 const industryOptions = computed(() => [
   '全部產業',
-  ...industryList.map(item => item.industry)
+  ...industryList.map(item => item.industry),
 ])
 
-// Compute target links preserving query params
-const regularModeLink = computed(() => ({
-  path: '/companies',
-  query: route.query
-}))
+// Version-switch links preserve current query params
+const regularModeLink = computed(() => ({ path: '/companies', query: route.query }))
+const proModeLink = computed(() => ({ path: '/companies/pro', query: route.query }))
 
-const proModeLink = computed(() => ({
-  path: '/companies/pro',
-  query: route.query
-}))
-
-// Handle mode changes
 const handleModeClick = (mode: 'regular' | 'pro') => {
   setMode(mode)
 }
 
-// Update search
-const updateSearch = (value: string) => {
-  localValue.value = { ...localValue.value, search: value }
+const clearFilters = () => {
+  emit('update:modelValue', { search: '', region: '', industry: '' })
 }
 
 const selectUi = {
-  base: 'text-earth-brown',
+  base: 'filter-sel',
   content: 'bg-surface-warm border border-green-deep/40',
   item: 'text-earth-brown data-highlighted:bg-green-deep/30 data-highlighted:text-white',
 }
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- Desktop layout (2 rows × 2 columns) -->
-    <div class="hidden md:grid md:grid-cols-2 gap-4">
-      <!-- Row 1, Column 1: Page title -->
-      <div class="flex items-center">
-        <h1 class="text-3xl sm:text-[2.5rem] font-bold text-earth-brown mt-0 sm:mt-8 mb-6 leading-[1.2] pb-4">
-          排碳大戶觀測企業清單
-        </h1>
-      </div>
+  <div>
+    <header class="co-header">
+      <NuxtLink to="/" class="back-link">
+        ← 回首頁
+      </NuxtLink>
+      <h1>排碳大戶觀測企業清單</h1>
 
-      <!-- Row 1, Column 2: Mode toggle -->
-      <div class="flex items-center justify-end">
-        <div class="inline-flex rounded-full bg-surface-mint p-1">
-          <NuxtLink
-            :to="regularModeLink"
-            :class="[
-              'px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer',
-              !isPro
-                ? 'bg-green-pure text-white'
-                : 'bg-transparent text-earth-brown hover:bg-surface-mint/50'
-            ]"
-            @click="handleModeClick('regular')"
-          >
-            易讀版
-          </NuxtLink>
-          <NuxtLink
-            :to="proModeLink"
-            :class="[
-              'px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer',
-              isPro
-                ? 'bg-green-pure text-white'
-                : 'bg-transparent text-earth-brown hover:bg-surface-mint/50'
-            ]"
-            @click="handleModeClick('pro')"
-          >
-            專業版
-          </NuxtLink>
-        </div>
+      <div class="ver-switch">
+        <NuxtLink
+          :to="regularModeLink"
+          class="ver-label"
+          :class="{ on: !isPro }"
+          @click="handleModeClick('regular')"
+        >
+          易讀版
+        </NuxtLink>
+        <NuxtLink
+          :to="isPro ? regularModeLink : proModeLink"
+          class="switch"
+          role="switch"
+          :aria-checked="isPro"
+          aria-label="切換易讀版與專業版"
+          @click="handleModeClick(isPro ? 'regular' : 'pro')"
+        >
+          <span class="knob" />
+        </NuxtLink>
+        <NuxtLink
+          :to="proModeLink"
+          class="ver-label"
+          :class="{ on: isPro }"
+          @click="handleModeClick('pro')"
+        >
+          專業版
+        </NuxtLink>
       </div>
+    </header>
 
-      <!-- Row 2, Column 1: Search input (wider) -->
-      <div class="col-span-1">
+    <div class="filter-bar">
+      <div class="filter-group filter-group-search">
+        <label class="filter-label" for="co-search">搜尋企業</label>
         <UInput
+          id="co-search"
           :model-value="modelValue.search"
           icon="i-heroicons-magnifying-glass"
           placeholder="搜尋你關注的企業..."
-          size="lg"
-          class="max-w-full w-80"
-          :ui="{
-            base: 'text-earth-brown placeholder:text-earth-brown/50'
-          }"
-          @update:model-value="updateSearch"
+          :ui="{ base: 'filter-sel', root: 'w-full' }"
+          @update:model-value="patch({ search: $event })"
         />
       </div>
 
-      <!-- Row 2, Column 2: Filter dropdowns in same row -->
-      <div class="flex gap-2 justify-end">
+      <div class="filter-group">
+        <label class="filter-label" for="co-region">指定地區</label>
         <USelect
-          v-model="localValue.region"
+          id="co-region"
+          v-model="region"
           :items="regionOptions"
-          placeholder="指定地區"
-          size="md"
+          placeholder="全部縣市"
           trailing-icon="i-heroicons-chevron-down"
-          class="w-30"
           :ui="selectUi"
         />
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label" for="co-industry">指定產業別</label>
         <USelect
-          v-model="localValue.industry"
+          id="co-industry"
+          v-model="industry"
           :items="industryOptions"
-          placeholder="指定產業別"
-          size="md"
+          placeholder="全部產業"
           trailing-icon="i-heroicons-chevron-down"
-          class="w-30"
           :ui="selectUi"
         />
       </div>
-    </div>
 
-    <!-- Mobile layout (single column) -->
-    <div class="md:hidden space-y-4">
-      <!-- Page title with info icon -->
-      <div class="flex items-center gap-2">
-        <h1 class="text-3xl sm:text-[2.5rem] font-bold text-green-deep mt-0 sm:mt-2 mb-4 leading-[1.2] pb-4">
-          排碳大戶觀測企業清單
-        </h1>
-      </div>
+      <UButton
+        color="neutral"
+        variant="ghost"
+        class="filter-clear"
+        @click="clearFilters"
+      >
+        清除所有篩選
+      </UButton>
 
-      <!-- Mode toggle -->
-      <div class="flex justify-center">
-        <div class="inline-flex rounded-full bg-surface-mint p-1 w-full max-w-xs">
-          <NuxtLink
-            :to="regularModeLink"
-            :class="[
-              'flex-1 px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer text-center',
-              !isPro
-                ? 'bg-green-pure text-white'
-                : 'bg-transparent text-earth-brown'
-            ]"
-            @click="handleModeClick('regular')"
-          >
-            易讀版
-          </NuxtLink>
-          <NuxtLink
-            :to="proModeLink"
-            :class="[
-              'flex-1 px-4 py-2 rounded-full text-sm font-medium transition-colors cursor-pointer text-center',
-              isPro
-                ? 'bg-green-pure text-white'
-                : 'bg-transparent text-earth-brown'
-            ]"
-            @click="handleModeClick('pro')"
-          >
-            專業版
-          </NuxtLink>
-        </div>
-      </div>
-
-      <!-- Search input -->
-      <UInput
-        :model-value="modelValue.search"
-        icon="i-heroicons-magnifying-glass"
-        placeholder="搜尋你關注的企業..."
-        size="lg"
-        class="max-w-full w-full"
-        style="min-width: 20rem;"
-        :ui="{
-          base: 'text-earth-brown placeholder:text-earth-brown/50'
-        }"
-        @update:model-value="updateSearch"
-      />
-
-      <!-- Filter dropdowns in same row -->
-      <div class="flex gap-2">
-        <USelect
-          v-model="localValue.region"
-          :items="regionOptions"
-          placeholder="指定地區"
-          size="md"
-          trailing-icon="i-heroicons-chevron-down"
-          class="w-30"
-          :ui="selectUi"
-        />
-        <USelect
-          v-model="localValue.industry"
-          :items="industryOptions"
-          placeholder="指定產業別"
-          size="md"
-          trailing-icon="i-heroicons-chevron-down"
-          class="w-30"
-          :ui="selectUi"
-        />
-      </div>
+      <p class="result-count">
+        顯示 <strong>{{ resultCount }}</strong> 家企業
+      </p>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* ── co-header ────────────────────────────────────────── */
+.co-header {
+  padding-bottom: 24px;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 14px;
+  transition: color 0.15s;
+}
+
+.back-link:hover {
+  color: var(--color-green-spring);
+}
+
+.co-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.015em;
+  margin-bottom: 18px;
+}
+
+/* ── version switch ──────────────────────────────────── */
+.ver-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ver-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.ver-label:hover {
+  color: var(--color-text-secondary);
+}
+
+.ver-label.on {
+  color: var(--color-text-primary);
+}
+
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 46px;
+  height: 24px;
+  padding: 2px;
+  border: 1px solid var(--color-bg-border);
+  border-radius: 12px;
+  background: var(--color-bg-overlay);
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--color-green-pure);
+  outline-offset: 2px;
+}
+
+.knob {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-text-secondary);
+  transition: transform 0.18s, background 0.18s;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--color-green-forest);
+}
+
+.switch[aria-checked='true'] .knob {
+  transform: translateX(22px);
+  background: var(--color-green-mint);
+}
+
+/* ── filter bar ──────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding-bottom: 20px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.filter-group-search {
+  min-width: 15rem;
+  flex: 1 1 18rem;
+  max-width: 22rem;
+}
+
+.filter-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted);
+}
+
+/* 搜尋框與下拉選單統一為設計稿的 .filter-sel 外觀
+   （覆蓋 Nuxt UI 預設的淺色 ring-accented / primary focus ring）*/
+.filter-bar :deep(.filter-sel) {
+  min-width: 9.5rem;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  background-color: var(--color-bg-elevated);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px var(--color-bg-border);
+  transition: box-shadow 0.15s;
+}
+
+.filter-bar :deep(.filter-sel:hover) {
+  box-shadow: inset 0 0 0 1px var(--color-green-forest) !important;
+}
+
+.filter-bar :deep(.filter-sel:focus),
+.filter-bar :deep(.filter-sel:focus-visible),
+.filter-bar :deep(.filter-sel:focus-within) {
+  box-shadow: inset 0 0 0 1px var(--color-green-pure) !important;
+  outline: none;
+}
+
+.filter-bar :deep(.filter-sel::placeholder) {
+  color: var(--color-text-muted);
+}
+
+.filter-bar :deep(.filter-clear) {
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-bg-border);
+  border-radius: 8px;
+  font-size: 13px;
+  padding: 8px 14px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.filter-bar :deep(.filter-clear:hover) {
+  color: var(--color-green-spring);
+  border-color: var(--color-green-forest);
+  background: transparent;
+}
+
+.result-count {
+  margin-left: auto;
+  align-self: flex-end;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.result-count strong {
+  color: var(--color-green-spring);
+  font-family: 'IBM Plex Mono', 'Cascadia Code', monospace;
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .filter-group,
+  .filter-group-search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .result-count {
+    margin-left: 0;
+  }
+}
+</style>

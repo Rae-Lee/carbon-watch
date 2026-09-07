@@ -1,60 +1,168 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+body {
+  font-family: 'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
 /**
  * Custom Color Palette - CSS Variables
  * Step 1: Define CSS variables for light and dark modes
  */
 
 :root {
-  --ui-bg: #1A2C1A;
+  --ui-bg: #090D0A;
 
-  /* Background & Surface Colors */
-  --color-surface-mint: #1A2C1A;
-  --color-surface-warm: #213620;
+  /* ── Background Layers ─────────────────────────────────── */
+  --color-bg-base:    #090D0A; /* bg0 — body / page base (darkest) */
+  --color-bg-surface: #0F1511; /* bg1 — primary card / nav surface */
+  --color-bg-elevated:#172019; /* bg2 — hover / secondary surface */
+  --color-bg-border:  #1F2D22; /* bgB — dividers, borders */
+  --color-bg-overlay: #253528; /* bgS — badge backgrounds, deepest surface */
 
-  /* Text & Neutral Colors */
-  --color-earth-brown: #C4BE9A;
-  --color-earth-brown-light: #E8A87C;
+  /* Aliases used by existing components */
+  --color-surface-mint: #0F1511;
+  --color-surface-warm: #172019;
 
-  /* Green Scale - Primary Brand Colors */
-  --color-green-mint: #5AE694;
-  --color-green-spring: #26C04F;
-  --color-green-pure: #05D915;
-  --color-green-deep: #3A9D63;
-  --color-green-forest: #0A8F0A;
+  /* ── Text Colors ───────────────────────────────────────── */
+  --color-text-primary:  #DDE8DF; /* tx1 — headings, key values */
+  --color-text-secondary:#9eb8a2; /* tx2 — body text, descriptions */
+  --color-text-muted:    #556A58; /* tx3 — labels, placeholder, de-emphasis */
+  --color-text-inverted: #090D0A; /* txI — dark text on bright buttons */
 
-  /* Accent Colors */
-  --color-accent-blue: #7A9CFF;
-  --color-accent-yellow: #F5C71A;
-  --color-accent-red: #FF4040;
+  /* Alias used by existing components */
+  --color-earth-brown:       #9eb8a2; /* → text-secondary */
+  --color-earth-brown-light: #5BB278; /* g300 — progress bar fill, map accent */
+
+  /* ── Green Scale ───────────────────────────────────────── */
+  --color-green-50:  #E8F5EC;
+  --color-green-100: #C2E4CC;
+  --color-green-200: #8ECBA0;
+  --color-green-300: #5BB278;
+  --color-green-400: #3A9A5C;
+  --color-green-500: #2A7A45;
+  --color-green-600: #1D5C31;
+  --color-green-700: #134020;
+  --color-green-800: #0A2712;
+
+  /* Aliases used by existing components */
+  --color-green-mint:   #8ECBA0; /* g200 — section headings, highlight values */
+  --color-green-spring: #5BB278; /* g300 — nav underline, border accent */
+  --color-green-pure:   #3A9A5C; /* g400 — button active, selected state, 超乎期待 */
+  --color-green-deep:   #4FAD6E; /* lk  — link color, checkmarks, positive values */
+  --color-green-forest: #1D5C31; /* g600 — table header background */
+
+  /* ── Links ─────────────────────────────────────────────── */
+  --color-link:       #4FAD6E; /* lk */
+  --color-link-hover: #7FCF98; /* lkH */
+
+  /* ── Status / Climate Performance ─────────────────────── */
+  --color-status-great: #3A9A5C; /* st-great — 超乎期待 */
+  --color-status-ok:    #7FB96F; /* st-ok    — 合乎標準 */
+  --color-status-warn:  #D4943A; /* st-warn  — 有待加強 */
+  --color-status-bad:   #C0504A; /* st-bad   — 遠低於期望 */
+
+  /* Aliases used by existing components */
+  --color-accent-blue:   #7FB96F; /* → status-ok */
+  --color-accent-yellow: #D4943A; /* → status-warn */
+  --color-accent-red:    #C0504A; /* → status-bad */
+
+  /* ── Carbon Heat Map (縣市碳排熱度，雨量圖色階) ──────── */
+  --color-heat-6: #9B4DCA; /* ≥ 20%       紫 */
+  --color-heat-5: #B93FA0; /* 10 – 20%    紫紅 */
+  --color-heat-4: #D0453F; /* 5 – 10%     紅 */
+  --color-heat-3: #E0762F; /* 2 – 5%      橙 */
+  --color-heat-2: #E0A82E; /* 0.5 – 2%    黃 */
+  --color-heat-1: #D9CB5A; /* < 0.5%      淺黃 */
+  --color-heat-0: #333B35; /* 無資料       灰 */
+
+  /* ── Factory / Map Pins ────────────────────────────────── */
+  --color-pin:        #E5484D; /* 工廠標記 */
+  --color-pin-active: #FF6B6B; /* 工廠標記 hover / active */
+
+  /* Alias kept for existing map consumers (home 廠區點位淡紅圓點) */
   --color-accent-red-light: #FFA0A0;
 }
 
 /**
  * Step 2: Map CSS variables to Tailwind theme colors
- * This allows using: bg-surface-mint, text-green-pure, etc.
+ * Allows using: bg-bg-surface, text-text-primary, bg-heat-6, etc.
  */
 @theme {
+  /* Background layers */
+  --color-bg-base:     var(--color-bg-base);
+  --color-bg-surface:  var(--color-bg-surface);
+  --color-bg-elevated: var(--color-bg-elevated);
+  --color-bg-border:   var(--color-bg-border);
+  --color-bg-overlay:  var(--color-bg-overlay);
+
+  /* Legacy surface aliases */
   --color-surface-mint: var(--color-surface-mint);
   --color-surface-warm: var(--color-surface-warm);
-  --color-earth-brown: var(--color-earth-brown);
+
+  /* Text */
+  --color-text-primary:   var(--color-text-primary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-text-muted:     var(--color-text-muted);
+  --color-text-inverted:  var(--color-text-inverted);
+
+  /* Legacy text aliases */
+  --color-earth-brown:       var(--color-earth-brown);
   --color-earth-brown-light: var(--color-earth-brown-light);
-  --color-green-mint: var(--color-green-mint);
+
+  /* Green scale */
+  --color-green-50:  var(--color-green-50);
+  --color-green-100: var(--color-green-100);
+  --color-green-200: var(--color-green-200);
+  --color-green-300: var(--color-green-300);
+  --color-green-400: var(--color-green-400);
+  --color-green-500: var(--color-green-500);
+  --color-green-600: var(--color-green-600);
+  --color-green-700: var(--color-green-700);
+  --color-green-800: var(--color-green-800);
+
+  /* Legacy green aliases */
+  --color-green-mint:   var(--color-green-mint);
   --color-green-spring: var(--color-green-spring);
-  --color-green-pure: var(--color-green-pure);
-  --color-green-deep: var(--color-green-deep);
+  --color-green-pure:   var(--color-green-pure);
+  --color-green-deep:   var(--color-green-deep);
   --color-green-forest: var(--color-green-forest);
-  --color-accent-blue : var(--color-accent-blue);
+
+  /* Links */
+  --color-link:       var(--color-link);
+  --color-link-hover: var(--color-link-hover);
+
+  /* Status */
+  --color-status-great: var(--color-status-great);
+  --color-status-ok:    var(--color-status-ok);
+  --color-status-warn:  var(--color-status-warn);
+  --color-status-bad:   var(--color-status-bad);
+
+  /* Legacy accent aliases */
+  --color-accent-blue:   var(--color-accent-blue);
   --color-accent-yellow: var(--color-accent-yellow);
-  --color-accent-red: var(--color-accent-red);
+  --color-accent-red:    var(--color-accent-red);
   --color-accent-red-light: var(--color-accent-red-light);
+
+  /* Heat map */
+  --color-heat-0: var(--color-heat-0);
+  --color-heat-1: var(--color-heat-1);
+  --color-heat-2: var(--color-heat-2);
+  --color-heat-3: var(--color-heat-3);
+  --color-heat-4: var(--color-heat-4);
+  --color-heat-5: var(--color-heat-5);
+  --color-heat-6: var(--color-heat-6);
+
+  /* Pins */
+  --color-pin:        var(--color-pin);
+  --color-pin-active: var(--color-pin-active);
 }
 
 /**
  * Content Container Utility
  * Provides consistent max-width (90rem/1440px) and responsive padding (1rem on mobile)
- * 
+ *
  * Note: For Tailwind v4+, use the ContentContainer component or inline classes:
  * - Component: <ContentContainer>...</ContentContainer>
  * - Inline: class="mx-auto w-full max-w-[90rem] px-4"

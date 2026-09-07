@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import regionEmissionList from '~/assets/data/region-emission-list.json'
 
 interface RegionEmission {
@@ -13,41 +13,84 @@ const regions = regionEmissionList as RegionEmission[]
 
 const activeCardIndex = ref(0)
 const highlightedRegion = ref<string | null>(null)
+const selectedRegion = ref<string | null>(null)
 const carouselRef = ref<HTMLDivElement | null>(null)
 const cardsContainerRef = ref<HTMLDivElement | null>(null)
 const isPhone = ref(false)
 const blinkingRegion = ref<string | null>(null)
 const mapLoaded = ref(false)
 
-// Get list of valid region names
-const validRegionNames = computed(() => regions.map(r => r.縣市))
+const regionSlugMap: Record<string, string> = {
+  '台北市': 'taipei',
+  '新北市': 'new_taipei',
+  '桃園市': 'taoyuan',
+  '台中市': 'taichung',
+  '台南市': 'tainan',
+  '高雄市': 'kaohsiung',
+  '基隆市': 'keelung_city',
+  '新竹市': 'hsinchu_city',
+  '嘉義市': 'chiayi_city',
+  '新竹縣': 'hsinchu_county',
+  '苗栗縣': 'miaoli',
+  '彰化縣': 'changhua',
+  '南投縣': 'nantou',
+  '雲林縣': 'yunlin',
+  '嘉義縣': 'chiayi_county',
+  '屏東縣': 'pingtung',
+  '宜蘭縣': 'yilan',
+  '花蓮縣': 'hualien',
+  '台東縣': 'taitung',
+  '澎湖縣': 'penghu',
+  '金門縣': 'kinmen',
+  '連江縣': 'matsu',
+}
 
-// Check if device is mobile
+const ALL_COUNTIES = Object.keys(regionSlugMap)
+
+const localNetZeroUrl = computed(() => {
+  if (!selectedRegion.value) return ''
+  const slug = regionSlugMap[selectedRegion.value]
+  return slug ? `https://localnetzero.gcaa.org.tw/r/${slug}` : ''
+})
+
+const companiesUrl = computed(() =>
+  selectedRegion.value ? `/companies?region=${encodeURIComponent(selectedRegion.value)}` : ''
+)
+
+const validRegionNames = computed(() => regions.map(r => r.縣市))
+const maxBars = computed(() => Math.max(...regions.map(r => r.總排放量佔比)))
+
+const regionDataMap = Object.fromEntries(regions.map(r => [r.縣市, r]))
+
+const mergedRegions = computed(() => {
+  const withData = regions.map(r => ({ ...r, disabled: false }))
+  const withoutData = ALL_COUNTIES
+    .filter(name => !regionDataMap[name])
+    .map(name => ({ 縣市: name, 總排放量: 0, 總排放量佔比: 0, 企業數: 0, disabled: true }))
+  return [...withData, ...withoutData]
+})
+
 onMounted(() => {
   const checkViewport = () => {
     isPhone.value = window.innerWidth < 768
   }
-  
+
   checkViewport()
   window.addEventListener('resize', checkViewport)
-  
-  // Prevent body scroll when scrolling inside cards container
+
   const handleWheel = (e: WheelEvent) => {
     if (!cardsContainerRef.value) return
-    
     const container = cardsContainerRef.value
     const isScrollingDown = e.deltaY > 0
     const isAtTop = container.scrollTop === 0
     const isAtBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 1
-    
-    // Prevent body scroll if we're scrolling within bounds
     if ((isScrollingDown && !isAtBottom) || (!isScrollingDown && !isAtTop)) {
       e.stopPropagation()
     }
   }
-  
+
   cardsContainerRef.value?.addEventListener('wheel', handleWheel, { passive: false })
-  
+
   return () => {
     window.removeEventListener('resize', checkViewport)
     cardsContainerRef.value?.removeEventListener('wheel', handleWheel)
@@ -56,210 +99,363 @@ onMounted(() => {
 
 const focusedRegion = computed(() => {
   if (isPhone.value && activeCardIndex.value >= 0) {
-    return regions[activeCardIndex.value]?.縣市 || null
+    return mergedRegions.value[activeCardIndex.value]?.縣市 || null
   }
   return null
 })
 
-// Handle carousel scroll on mobile
 const handleScroll = () => {
   if (!carouselRef.value || !isPhone.value) return
-
   const scrollLeft = carouselRef.value.scrollLeft
   const cardWidth = window.innerWidth * 0.7 + 16
   const newIndex = Math.round(scrollLeft / cardWidth)
-
   if (newIndex !== activeCardIndex.value) {
     activeCardIndex.value = newIndex
+    // Keep the region actions in sync once the user has engaged with the map.
+    if (selectedRegion.value) {
+      selectedRegion.value = mergedRegions.value[newIndex]?.縣市 ?? null
+    }
   }
 }
 
-// Handle card click
-const handleCardClick = (region: string) => {
-  const baseUrl = '/companies'
-  // Note: You can add logic here to determine if user has pro access
-  // For now, just go to basic companies page with region filter
-  const url = `${baseUrl}?region=${encodeURIComponent(region)}`
-  navigateTo(url)
+// Mobile: surface the region actions + focus that county on the map and the
+// carousel (mirrors the desktop click behaviour instead of navigating away).
+const selectRegionOnMobile = async (regionName: string) => {
+  selectedRegion.value = regionName
+  const mergedIndex = mergedRegions.value.findIndex(r => r.縣市 === regionName)
+  if (mergedIndex === -1) return
+  activeCardIndex.value = mergedIndex
+  await nextTick()
+  const cardWidth = window.innerWidth * 0.7 + 16
+  carouselRef.value?.scrollTo({ left: mergedIndex * cardWidth })
 }
 
-// Handle map region click (desktop only)
-const handleMapClick = async (regionName: string) => {
-  if (isPhone.value) return
+const handleCardClick = (region: string) => {
+  if (isPhone.value) {
+    selectRegionOnMobile(region)
+    return
+  }
+  selectedRegion.value = region
+  highlightedRegion.value = region
+}
 
-  // Find the card for this region
+const handleMapClick = async (regionName: string) => {
+  if (isPhone.value) {
+    await selectRegionOnMobile(regionName)
+    return
+  }
+
+  selectedRegion.value = regionName
+
   const regionIndex = regions.findIndex(r => r.縣市 === regionName)
   if (regionIndex === -1) return
 
-  // Trigger blink animation
   blinkingRegion.value = regionName
 
-  // Scroll within the cards container (not the whole page)
   const cardElement = document.querySelector(`[data-region-index="${regionIndex}"]`) as HTMLElement | null
   const container = cardsContainerRef.value
   if (cardElement && container) {
     const containerRect = container.getBoundingClientRect()
     const cardRect = cardElement.getBoundingClientRect()
-    // Calculate scroll position to center the card in the container
     const scrollTop = cardElement.offsetTop - container.offsetTop - (containerRect.height / 2) + (cardRect.height / 2)
     container.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' })
   }
 
-  // Remove blink animation after 3 seconds
-  setTimeout(() => {
-    blinkingRegion.value = null
-  }, 3000)
+  setTimeout(() => { blinkingRegion.value = null }, 3000)
 }
 
-// Handle card hover on desktop
 const handleCardHover = (regionName: string | null) => {
   if (!isPhone.value) {
     highlightedRegion.value = regionName
   }
 }
 
-// Handle map loaded event
 const handleMapLoaded = () => {
   mapLoaded.value = true
-  
-  // On mobile, scroll to first card (already at index 0)
   if (isPhone.value && carouselRef.value) {
-    // Ensure we're at the first card
     carouselRef.value.scrollLeft = 0
   }
 }
 
-// Computed property to check if we should show mobile carousel
-const showMobileCarousel = computed(() => {
-  return isPhone.value && mapLoaded.value
-})
+const showMobileCarousel = computed(() => isPhone.value && mapLoaded.value)
+
+const heatItems = [
+  { label: '≥ 20%',           color: 'var(--color-heat-6)' },
+  { label: '10–20%',          color: 'var(--color-heat-5)' },
+  { label: '5–10%',           color: 'var(--color-heat-4)' },
+  { label: '2–5%',            color: 'var(--color-heat-3)' },
+  { label: '0.5–2%',          color: 'var(--color-heat-2)' },
+  { label: '< 0.5%',          color: 'var(--color-heat-1)' },
+  { label: '境內無製造業排碳大戶', color: 'var(--color-heat-0)' },
+]
 </script>
 
 <template>
-  <section class="bg-surface-warm py-35 min-h-[80vh]">
-    <div class="mx-auto w-full px-4" :class="isPhone ? 'max-w-[90rem]' : 'max-w-[80rem]'">
-      <h2 class="text-4xl font-bold text-green-mint dark:text-green-mint mb-8 text-center">
-        各縣市排碳大戶排放量
-      </h2>
-      
-      <!-- Mobile Layout -->
-      <div v-if="isPhone" class="flex flex-col gap-4" style="height: calc(80vh - 6rem);">
-        <div :class="showMobileCarousel ? 'flex-1 min-h-0' : 'flex-1'">
-          <TaiwanMap 
-            :focused-region="focusedRegion"
-            :allow-zoom="true"
-            @map-loaded="handleMapLoaded"
-          />
-        </div>
-        
-        <div 
-          v-show="showMobileCarousel"
-          ref="carouselRef"
-          class="flex-shrink-0 flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-4 pt-2"
-          style="-webkit-overflow-scrolling: touch;"
-          @scroll="handleScroll"
+  <section class="region-section">
+    <div class="section-head">
+      <h2>各縣市排碳大戶排放量</h2>
+    </div>
+
+    <!-- Desktop layout -->
+    <div v-if="!isPhone" class="map-layout">
+      <div ref="cardsContainerRef" class="region-list">
+        <div
+          v-for="(region, index) in mergedRegions"
+          :key="region.縣市"
+          :data-region-index="index"
+          v-bind="region.disabled ? {} : {
+            onClick: () => handleCardClick(region.縣市),
+            onMouseenter: () => handleCardHover(region.縣市),
+            onMouseleave: () => handleCardHover(null),
+          }"
         >
-          <div
-            v-for="(region, index) in regions"
-            :key="region.縣市"
-            :data-region-index="index"
-            class="flex-none snap-start"
-            style="flex: 0 0 70vw;"
-            @click="handleCardClick(region.縣市)"
-          >
-            <RegionEmissionCard
-              :縣市="region.縣市"
-              :總排放量="region.總排放量"
-              :總排放量佔比="region.總排放量佔比"
-              :企業數="region.企業數"
-              :is-active="index === activeCardIndex"
-            />
-          </div>
+          <RegionEmissionCard
+            :縣市="region.縣市"
+            :總排放量="region.總排放量"
+            :總排放量佔比="region.總排放量佔比"
+            :企業數="region.企業數"
+            :max-bars="maxBars"
+            :is-active="highlightedRegion === region.縣市"
+            :should-blink="blinkingRegion === region.縣市"
+            :disabled="region.disabled"
+          />
         </div>
       </div>
-      
-      <!-- Desktop/Tablet Layout -->
-      <div v-else class="grid grid-cols-2 gap-16" style="height: calc(80vh - 6rem);">
-        <div class="h-full">
-          <TaiwanMap 
-            :highlighted-region="highlightedRegion"
-            :allow-zoom="false"
-            :valid-regions="validRegionNames"
-            @region-click="handleMapClick"
+      <div class="map-container">
+        <div v-if="selectedRegion" class="region-actions">
+          <div class="rname">{{ selectedRegion }}</div>
+          <NuxtLink :to="companiesUrl" class="btn-act">
+            排碳大戶氣候績效表現
+          </NuxtLink>
+          <a
+            v-if="localNetZeroUrl"
+            :href="localNetZeroUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn-act"
+          >
+            地方淨零觀測站 <span class="ext">↗</span>
+          </a>
+        </div>
+        <TaiwanMap
+          :highlighted-region="highlightedRegion"
+          :allow-zoom="false"
+          :valid-regions="validRegionNames"
+          @region-click="handleMapClick"
+          @map-loaded="handleMapLoaded"
+        />
+      </div>
+    </div>
+
+    <!-- Mobile layout -->
+    <div v-else class="flex flex-col gap-4" style="height: calc(80vh - 6rem);">
+      <div class="mobile-map" :class="showMobileCarousel ? 'flex-1 min-h-0' : 'flex-1'">
+        <div v-if="selectedRegion" class="region-actions">
+          <div class="rname">{{ selectedRegion }}</div>
+          <NuxtLink :to="companiesUrl" class="btn-act">
+            排碳大戶氣候績效表現
+          </NuxtLink>
+          <a
+            v-if="localNetZeroUrl"
+            :href="localNetZeroUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn-act"
+          >
+            地方淨零觀測站 <span class="ext">↗</span>
+          </a>
+        </div>
+        <TaiwanMap
+          :focused-region="focusedRegion"
+          :allow-zoom="true"
+          :valid-regions="validRegionNames"
+          @region-click="handleMapClick"
+          @map-loaded="handleMapLoaded"
+        />
+      </div>
+      <div
+        v-show="showMobileCarousel"
+        ref="carouselRef"
+        class="flex-shrink-0 flex gap-4 overflow-x-auto snap-x snap-mandatory scroll-smooth pb-4 pt-2"
+        style="-webkit-overflow-scrolling: touch;"
+        @scroll="handleScroll"
+      >
+        <div
+          v-for="(region, index) in mergedRegions"
+          :key="region.縣市"
+          :data-region-index="index"
+          class="flex-none snap-start"
+          style="flex: 0 0 70vw;"
+          v-bind="region.disabled ? {} : { onClick: () => handleCardClick(region.縣市) }"
+        >
+          <RegionEmissionCard
+            :縣市="region.縣市"
+            :總排放量="region.總排放量"
+            :總排放量佔比="region.總排放量佔比"
+            :企業數="region.企業數"
+            :max-bars="maxBars"
+            :is-active="index === activeCardIndex"
+            :disabled="region.disabled"
           />
         </div>
-        
-        <div ref="cardsContainerRef" class="overflow-y-auto pr-2 flex flex-col gap-4">
-          <div
-            v-for="(region, index) in regions"
-            :key="region.縣市"
-            :data-region-index="index"
-            class="flex-shrink-0"
-            @click="handleCardClick(region.縣市)"
-            @mouseenter="handleCardHover(region.縣市)"
-            @mouseleave="handleCardHover(null)"
-          >
-            <RegionEmissionCard
-              :縣市="region.縣市"
-              :總排放量="region.總排放量"
-              :總排放量佔比="region.總排放量佔比"
-              :企業數="region.企業數"
-              :should-blink="blinkingRegion === region.縣市"
-            />
-          </div>
-        </div>
+      </div>
+    </div>
+
+    <!-- Heat legend — 放在地圖下方 -->
+    <div class="heat-legend">
+      <span class="heat-label">佔全台製造業排放</span>
+      <div v-for="item in heatItems" :key="item.label" class="heat-item">
+        <span class="heat-chip" :style="{ background: item.color }" />
+        {{ item.label }}
       </div>
     </div>
   </section>
 </template>
 
 <style scoped>
-/* Carousel scrollbar styling */
-[ref="carouselRef"]::-webkit-scrollbar {
-  height: 4px;
+.region-section {
+  padding: 56px 64px;
+  border-top: 1px solid var(--color-bg-border);
 }
 
-[ref="carouselRef"]::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
+.section-head {
+  margin-bottom: 22px;
+}
+
+.heat-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 11px 16px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-bg-border);
+  border-radius: 8px;
+}
+
+.heat-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-right: 2px;
+}
+
+.heat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+.heat-chip {
+  width: 22px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.section-head h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.015em;
+}
+
+.map-layout {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  border: 1px solid var(--color-bg-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.region-list {
+  border-right: 1px solid var(--color-bg-border);
+  overflow-y: auto;
+  max-height: 720px;
+  background: var(--color-bg-surface);
+}
+
+.region-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.region-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.region-list::-webkit-scrollbar-thumb {
+  background: var(--color-bg-border);
   border-radius: 2px;
 }
 
-[ref="carouselRef"]::-webkit-scrollbar-thumb {
-  background: var(--color-earth-brown, #8B4513);
-  border-radius: 2px;
+.map-container {
+  background: var(--color-bg-surface);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
 }
 
-/* Cards container scrollbar styling */
-.overflow-y-auto::-webkit-scrollbar {
-  width: 6px;
+.mobile-map {
+  position: relative;
 }
 
-.overflow-y-auto::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 3px;
+.region-actions {
+  position: absolute;
+  top: 20px;
+  left: 24px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
 }
 
-.overflow-y-auto::-webkit-scrollbar-thumb {
-  background: var(--color-earth-brown, #8B4513);
-  border-radius: 3px;
+.rname {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 2px;
 }
 
-/* Responsive title */
-@media (max-width: 767px) {
-  h2 {
-    font-size: 1.75rem;
-    margin-bottom: 1rem;
+.btn-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-bg-elevated);
+  color: var(--color-green-spring);
+  border: 1px solid var(--color-green-forest);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.btn-act:hover {
+  background: var(--color-bg-overlay);
+  border-color: var(--color-green-pure);
+}
+
+.ext {
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .region-section {
+    padding: 40px 24px;
   }
-  
-  section {
-    padding: 5rem 0;
-  }
-}
 
-/* Desktop grid adjustments for tablets */
-@media (min-width: 768px) and (max-width: 1024px) {
-  .grid-cols-2 {
-    grid-template-columns: 1.2fr 1fr;
+  .region-actions {
+    top: 12px;
+    left: 14px;
   }
 }
 </style>

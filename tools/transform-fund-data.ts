@@ -36,6 +36,10 @@
  * - `app/assets/data/funds/{fundKey}.json` -- `{ meta: FundData, companies: CompanyData[] }`
  *   for each fund that holds 排碳大戶. Coal is a single column (company-list
  *   `燃煤使用量（公噸）`), currently using 2025 data.
+ *
+ * `排碳大戶總碳排量` is the raw sum of every held 排碳大戶 company's full annual
+ * emissions (straight from the summary CSV, not weighted by holding size) --
+ * matches the 改設計0828 mockup column of the same name.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
@@ -169,25 +173,6 @@ function normUBN(v: string | undefined): string {
   return digits ? digits.padStart(8, '0') : '';
 }
 
-function calculateWeightedEmissions(
-  holdings: Record<string, string>[],
-  resolveFundKey: (row: Record<string, string>) => string | undefined,
-  companyByUBN: Map<string, CompanyData>
-): Map<string, number> {
-  const totals = new Map<string, number>();
-  holdings.forEach(row => {
-    if (String(row['是否排碳大戶']).trim().toUpperCase() !== 'TRUE') return;
-    const fundKey = resolveFundKey(row);
-    const fundSize = parseNumber(row['基金規模（萬）']);
-    const holdingValue = parseNumber(row['持股價值（萬）']);
-    const company = companyByUBN.get(normUBN(row['統一編號']));
-    const emissions = parseNumber(company?.['溫室氣體排放量（公噸二氧化碳當量）']);
-    if (!fundKey || fundSize <= 0 || holdingValue <= 0 || emissions <= 0) return;
-    totals.set(fundKey, (totals.get(fundKey) ?? 0) + holdingValue / fundSize * emissions);
-  });
-  return totals;
-}
-
 /** Read a raw-data CSV into rows of {header: value}. */
 function readCsv(filename: string): Record<string, string>[] {
   return parseCSV(readFileSync(join(RAW_DATA_DIR, filename), 'utf-8'));
@@ -230,7 +215,8 @@ function buildFund(
     總市值: Math.round(parseNumber(row['總市值（百萬新台幣）'])), // already 百萬
     排碳大戶家數,
     排碳大戶佔比: 持股企業數 > 0 ? Math.round((排碳大戶家數 / 持股企業數) * 10000) / 100 : 0,
-    排碳大戶總碳排量: parseNumber(row['排碳大戶總碳排量（公噸CO2e）']),
+    // 該基金持有的所有排碳大戶企業，全年溫室氣體排放量加總（不依持股比例加權）
+    排碳大戶總碳排量: Math.round(parseNumber(row['排碳大戶總碳排量（公噸CO2e）'])),
     使用燃煤家數: parseNumber(row['使用燃煤家數']),
     是否ESG基金: opts.isAdded ? true : ubn ? opts.esgUbnSet.has(ubn) : false,
     fundKey: ubn || sourceCode,
@@ -372,39 +358,6 @@ async function transformFundData() {
     const mgrCodeToFundKey = new Map<string, string>();
     managerFunds.forEach(f => {
       if (f.基金代號) mgrCodeToFundKey.set(f.基金代號, f.fundKey);
-    });
-
-    const companyByUBN = new Map<string, CompanyData>();
-    companyListData.forEach(company => {
-      const ubn = normUBN(company.事業統編);
-      if (ubn) companyByUBN.set(ubn, company);
-    });
-
-    const weightedEmissions = new Map<string, number>();
-    const addWeightedEmissions = (totals: Map<string, number>) => {
-      totals.forEach((value, fundKey) => {
-        weightedEmissions.set(fundKey, (weightedEmissions.get(fundKey) ?? 0) + value);
-      });
-    };
-    addWeightedEmissions(
-      calculateWeightedEmissions(
-        managerHoldings,
-        row => mgrCodeToFundKey.get((row['基金代號'] || '').trim()),
-        companyByUBN
-      )
-    );
-    addWeightedEmissions(
-      calculateWeightedEmissions(
-        esgHoldings,
-        row => {
-          const fundKey = esgCodeToUbn.get((row['基金代號'] || '').trim());
-          return fundKey && addedUbnSet.has(fundKey) ? fundKey : undefined;
-        },
-        companyByUBN
-      )
-    );
-    fundList.forEach(fund => {
-      fund.排碳大戶總碳排量 = Math.round((weightedEmissions.get(fund.fundKey) ?? 0) * 100) / 100;
     });
 
     // Generate per-fund company lists (keyed by fundKey).
